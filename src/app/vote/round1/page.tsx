@@ -55,11 +55,29 @@ export default async function Round1Page() {
     .eq("session_id", session.id)
     .eq("user_id", user.id);
 
+  // The user's own suggestion (if any) is fetched via a SECURITY DEFINER RPC
+  // because `topics.submitted_by` is intentionally not granted to the
+  // `authenticated` role. We render the user's submission inside the
+  // textarea card and filter it out of the main list so it's not also shown
+  // as an unattributed list item.
+  const { data: ownTopicRows } = await supabase.rpc("get_my_round1_topic", {
+    p_session_id: session.id,
+  });
+  const userTopic = (ownTopicRows ?? [])[0] ?? null;
+
+  const filteredTopics = userTopic
+    ? (topics ?? []).filter((t) => t.id !== userTopic.id)
+    : topics ?? [];
+  const filteredSelected = (existingVotes ?? [])
+    .map((v) => v.topic_id)
+    .filter((id) => !userTopic || id !== userTopic.id);
+
   return (
     <Round1Ballot
       sessionId={session.id}
-      topics={topics ?? []}
-      selected={(existingVotes ?? []).map((v) => v.topic_id)}
+      topics={filteredTopics}
+      selected={filteredSelected}
+      userTopic={userTopic}
     />
   );
 }

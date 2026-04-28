@@ -3,32 +3,45 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 
 // ----------------------- Round 1 ---------------------------------------------
 
-// Round 1 ballots are always exactly 3 distinct topics. Fewer than 3 is an
-// incomplete ballot and wouldn't give the user any benefit (they'd just lose
-// picks). The frontend enforces this too; this is the server-side gate.
+// Round 1 ballots total exactly 3 distinct picks. The picks may be any
+// combination of (a) topics from the imported list and (b) one user-submitted
+// topic typed into the ballot's textarea. The actual ballot composition,
+// dedupe, and topic creation all happen inside the SECURITY DEFINER RPC
+// `submit_round1_ballot` so that the topic insert and the vote inserts share
+// a single transaction. This zod schema is purely a shape/sanity gate;
+// the authoritative count check lives in the RPC.
 const ROUND1_REQUIRED_PICKS = 3;
 
 const round1PayloadSchema = z.object({
   session_id: z.string().uuid(),
-  topic_ids: z
-    .array(z.string().uuid())
-    .refine(
-      (ids) => new Set(ids).size === ROUND1_REQUIRED_PICKS,
-      `Round 1 ballot must contain exactly ${ROUND1_REQUIRED_PICKS} distinct topics.`,
-    ),
+  topic_ids: z.array(z.string().uuid()).max(ROUND1_REQUIRED_PICKS),
+  user_topic_text: z
+    .string()
+    .max(500)
+    .nullable()
+    .optional()
+    .transform((v) => {
+      if (v == null) return null;
+      const trimmed = v.trim();
+      return trimmed.length === 0 ? null : trimmed;
+    }),
 });
 
 /**
- * Replaces the caller's Round 1 ballot with exactly 3 distinct topic ids.
- * RLS + ballot-cap trigger provide defense in depth on the upper bound; we
- * also delete the user's old rows first so re-submits are idempotent.
+ * Replaces the caller's Round 1 ballot with exactly 3 distinct topics.
+ * Optionally accepts a `user_topic_text` — if provided, a topic owned by the
+ * caller is upserted and counts as one of the 3 picks. The DB trigger
+ * `enforce_round1_cap` is still defense in depth; the RPC enforces phase,
+ * dedupe, ballot count, and topic-membership in a single transaction.
  */
 export async function submitRound1Ballot(payload: {
   session_id: string;
   topic_ids: string[];
+  user_topic_text?: string | null;
 }): Promise<{ ok: true }> {
   const parsed = round1PayloadSchema.parse(payload);
   const supabase = await createClient();
@@ -37,21 +50,24 @@ export async function submitRound1Ballot(payload: {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Please sign in.");
 
-  const uniqueIds = Array.from(new Set(parsed.topic_ids));
+  // Cheap per-user throttle. The user-topic path lets a signed-in voter
+  // create rows in `topics`, so we don't want a runaway loop here even
+  // though the RPC already dedupes against the user's own existing row.
+  const limit = rateLimit(`r1_submit:${user.id}`, {
+    capacity: 30,
+    refillPerMinute: 30,
+  });
+  if (!limit.allowed) {
+    throw new Error(
+      `Too many ballot saves. Try again in ${Math.ceil((limit.retryAfterMs ?? 1000) / 1000)}s.`,
+    );
+  }
 
-  const { error: delError } = await supabase
-    .from("round1_votes")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("session_id", parsed.session_id);
-  if (delError) throw new Error(delError.message);
-
-  const rows = uniqueIds.map((topic_id) => ({
-    user_id: user.id,
-    topic_id,
-    session_id: parsed.session_id,
-  }));
-  const { error } = await supabase.from("round1_votes").insert(rows);
+  const { error } = await supabase.rpc("submit_round1_ballot", {
+    p_session_id: parsed.session_id,
+    p_topic_ids: parsed.topic_ids,
+    p_user_topic_text: parsed.user_topic_text,
+  });
   if (error) throw new Error(error.message);
 
   revalidatePath("/vote/round1");

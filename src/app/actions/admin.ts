@@ -12,7 +12,7 @@ const LEGAL_TRANSITIONS: Record<Phase, Phase[]> = {
   setup: ["round1", "archived"],
   round1: ["round2", "setup", "archived"],
   round2: ["results", "round1", "archived"],
-  results: ["archived"],
+  results: ["round2", "archived"],
   archived: [],
 };
 

@@ -35,7 +35,7 @@ const COPY: Record<Phase, PhaseCopy> = {
         },
         loggedOut: {
             headline: "Round 1 is in progress",
-            sub: "Sign in with Google to cast your ballot — you’ll pick your 3 favourite topics.",
+            sub: "Sign in with Google to cast your ballot — you’ll pick your 3 favorite topics.",
         },
         cta: { href: "/vote/round1", label: "Cast Round 1 ballot" },
     },
@@ -124,6 +124,15 @@ export default async function Home({
                         Vote to pick the next Music League topics. Come back
                         when the next season opens for voting.
                     </p>
+                    {!user ? (
+                        <div className="mt-10 flex flex-col items-center gap-2">
+                            <GoogleSignInButton next="/" />
+                            <p className="mt-1 text-xs text-[color:var(--color-muted)]">
+                                Are you an admin? Sign in to get the voting
+                                process started.
+                            </p>
+                        </div>
+                    ) : null}
                 </>
             ) : (
                 <>

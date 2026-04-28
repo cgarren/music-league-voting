@@ -7,7 +7,6 @@ import { Round2Ballot } from "./Round2Ballot";
 type BallotTopic = {
   topic_id: string;
   topic_text: string;
-  submitter: string;
 };
 
 export default async function Round2Page() {

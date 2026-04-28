@@ -43,7 +43,7 @@ const PHASE_COPY: Record<
     round1: {
         badge: "Round 1 in progress",
         headline: "Results aren’t in yet",
-        sub: "Voters are picking their favourite topics. Results will post after Round 2 wraps.",
+        sub: "Voters are picking their favorite topics. Results will post after Round 2 wraps.",
         cta: { href: "/vote/round1", label: "Cast your Round 1 ballot" },
     },
     round2: {
@@ -117,8 +117,10 @@ export default async function ResultsPage() {
         p_session_id: session.id,
     });
     const rows = (data ?? []) as Row[];
-    const maxPoints = rows.reduce((m, r) => Math.max(m, r.total_points), 0);
-    const minPoints = rows.reduce(
+    const winners = rows.filter((r) => r.rank <= 10);
+    const runnersUp = rows.filter((r) => r.rank > 10);
+    const maxPoints = winners.reduce((m, r) => Math.max(m, r.total_points), 0);
+    const minPoints = winners.reduce(
         (m, r) => Math.min(m, r.total_points),
         maxPoints,
     );
@@ -143,7 +145,7 @@ export default async function ResultsPage() {
                 </p>
             ) : (
                 <ol className="space-y-3">
-                    {rows.map((r) => {
+                    {winners.map((r) => {
                         const strength = voteStrength(
                             r.total_points,
                             minPoints,
@@ -165,7 +167,7 @@ export default async function ResultsPage() {
                                     >
                                         {r.rank}
                                     </span>
-                                    <div className="min-w-0 flex-1 text-left">
+                                    <div className="min-w-0 flex-1 text-left wrap-anywhere">
                                         <p className="text-pretty text-sm font-medium text-[color:var(--color-foreground)]">
                                             {formatTopicDisplay(r.topic_text)}
                                         </p>
@@ -214,6 +216,44 @@ export default async function ResultsPage() {
                     })}
                 </ol>
             )}
+
+            {runnersUp.length > 0 ? (
+                <section className="mt-10">
+                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
+                        Runners up
+                    </h2>
+                    <ol className="divide-y divide-[color:var(--color-border)]/60 overflow-hidden rounded-xl border border-[color:var(--color-border)]/60 bg-[color:var(--color-surface)]/60">
+                        {runnersUp.map((r) => (
+                            <li
+                                key={r.topic_id}
+                                className="flex items-baseline gap-3 px-4 py-2.5"
+                            >
+                                <span className="w-6 shrink-0 text-right text-xs font-medium tabular-nums text-[color:var(--color-muted)]">
+                                    {r.rank}
+                                </span>
+                                <div className="min-w-0 flex-1 wrap-anywhere">
+                                    <p className="text-sm text-[color:var(--color-foreground)]">
+                                        {formatTopicDisplay(r.topic_text)}
+                                    </p>
+                                    {r.submitter ? (
+                                        <p className="mt-0.5 text-xs text-[color:var(--color-muted)]">
+                                            Submitted by {r.submitter}
+                                        </p>
+                                    ) : null}
+                                </div>
+                                <span className="shrink-0 text-xs tabular-nums text-[color:var(--color-muted)]">
+                                    {r.total_points}{" "}
+                                    {pluralize(
+                                        r.total_points,
+                                        "vote",
+                                        "votes",
+                                    )}
+                                </span>
+                            </li>
+                        ))}
+                    </ol>
+                </section>
+            ) : null}
         </div>
     );
 }

@@ -41,7 +41,10 @@ const NEXT_ACTIONS: Record<Phase, { to: Phase; label: string }[]> = {
     { to: "round1", label: "Reopen Round 1" },
     { to: "results", label: "Close Round 2 → Publish Results" },
   ],
-  results: [{ to: "archived", label: "Archive & Start Fresh" }],
+  results: [
+    { to: "round2", label: "Reopen Round 2" },
+    { to: "archived", label: "Archive & Start Fresh" },
+  ],
   archived: [],
 };
 
@@ -300,7 +303,7 @@ export default async function AdminPage() {
             </>
           ) : (
             <>
-              {session.phase === "round2" ? (
+              {["round2", "results"].includes(session.phase) ? (
                 <>
                   {r2ResultsEl}
                   {r1ResultsEl}

@@ -8,7 +8,6 @@ import { pluralize } from "@/lib/pluralize";
 type Topic = {
   topic_id: string;
   topic_text: string;
-  submitter: string;
 };
 
 const TOTAL_VOTES = 10;
@@ -102,9 +101,9 @@ export function Round2Ballot({
           Spend your {TOTAL_VOTES} votes
         </h1>
         <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-          You must spend all {TOTAL_VOTES} votes. Pile them on the topics you
-          want most — all ten on one, or spread them thin. You can revise
-          your ballot until Round 2 closes.
+          Pile all {TOTAL_VOTES} on one, or spread them around — you must spend
+          every vote. Vote on the idea, not the wording; that gets figured out
+          later. You can revise until Round 2 closes.
         </p>
       </header>
 
@@ -177,13 +176,12 @@ export function Round2Ballot({
               }`}
             >
               <div className="flex items-center gap-4">
-                <div className="flex-1">
+                {/* min-w-0 lets this flex child shrink below its intrinsic
+                    size; overflow-wrap:anywhere breaks runs without natural
+                    break opportunities (e.g. "lolllllllllll…") so they can't
+                    push the +/- controls off the card. */}
+                <div className="min-w-0 flex-1 wrap-anywhere">
                   <p className="text-sm font-medium text-pretty">{label}</p>
-                  {t.submitter ? (
-                    <p className="mt-0.5 text-xs text-[color:var(--color-muted)]">
-                      Submitted by {t.submitter}
-                    </p>
-                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
