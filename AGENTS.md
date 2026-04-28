@@ -10,7 +10,7 @@ Companion notes for working on this codebase. Start with [README.md](README.md) 
 
 ## What this project is
 
-A two-round topic-voting app. Admin imports topic suggestions from a Google Sheet, users do a pick-3 round, then a 10-vote stackable round, then admin publishes the top 10. Google SSO, one vote per account.
+A two-round topic-voting app. Admin imports topic suggestions from a Google Sheet, users do a pick-3 round, then a 10-vote stackable round, then admin publishes the top 10 (with the next 10 shown as "runners up"; zero-vote topics are hidden from both lists). Google SSO, one vote per account. Voters can also contribute one of their own topic ideas from the Round 1 ballot itself; it counts as one of their three picks and joins the topic pool for everyone.
 
 ## Stack pins and gotchas
 
@@ -29,7 +29,7 @@ src/
     admin/         # admin dashboard (page.tsx + AdminImport, LiveResults, VoterRollup)
     vote/round1/   # pick-3 ballot (page.tsx + Round1Ballot client)
     vote/round2/   # 10-vote stackable ballot (page.tsx + Round2Ballot client)
-    results/       # top-10 (gated on phase = results)
+    results/       # top-10 + next-10 runners-up (gated on phase = results)
     auth/callback/ # OAuth code exchange
     layout.tsx, page.tsx, globals.css
   components/
@@ -48,7 +48,9 @@ src/
   proxy.ts                # Next 16 proxy; refreshes Supabase session cookies
 supabase/
   migrations/
-    0001_init.sql         # canonical schema. Keep this in lockstep with the DB.
+    0001_init.sql                 # canonical schema. Keep this in lockstep with the DB.
+    0002_user_round1_topics.sql   # topics.submitted_by + submit_round1_ballot/get_my_round1_topic RPCs
+    0003_round2_blind_voting.sql  # get_round2_ballot returns topic IDs/text only, no submitter
 ```
 
 ## Supabase MCP
@@ -77,10 +79,10 @@ All of these are invariants — break them at your peril.
 2. **`auth.uid()` inside policies must be wrapped**: `user_id = (select auth.uid())`. Using bare `auth.uid()` triggers a Supabase `auth_rls_initplan` performance advisor warning because the function is re-evaluated per row.
 3. **Views**: always `with (security_invoker = true)`. Results published to non-admin users should go through a `security definer` function that gates on session phase (see `public.get_results` and `public.get_round2_ballot`).
 4. **Never use `user_metadata` / `auth.jwt()` for authorisation.** Admin role is checked by email against `ADMIN_EMAILS` in [`src/lib/admin.ts`](src/lib/admin.ts). If you ever need role data in the DB, put it in `raw_app_meta_data` and query via server actions.
-5. **`sessions` and `topics` are secret-key-only writes.** There are no insert/update/delete policies for authenticated users. All mutations happen inside [`src/app/actions/admin.ts`](src/app/actions/admin.ts) via `createAdminClient()` after `requireAdmin()`. (`createAdminClient` uses `SUPABASE_SECRET_KEY` / legacy `SUPABASE_SERVICE_ROLE_KEY`; it bypasses RLS.)
+5. **`sessions` and `topics` are not directly writable by `authenticated`.** There are no insert/update/delete policies for end users on either table. Admin mutations happen inside [`src/app/actions/admin.ts`](src/app/actions/admin.ts) via `createAdminClient()` after `requireAdmin()` (`createAdminClient` uses `SUPABASE_SECRET_KEY` / legacy `SUPABASE_SERVICE_ROLE_KEY`; it bypasses RLS). The **one** exception is voter-contributed topics during Round 1: those go through the `public.submit_round1_ballot` SECURITY DEFINER RPC, which is the only path by which a non-admin can mutate `topics`. Don't add new RLS write policies on `topics`; if you need a new "users can write a topic" pathway, extend the RPC.
 6. **Phase gates live in triggers AND policies**, on purpose. RLS policies check `sessions.phase = 'round1'` on insert, and triggers re-check on `BEFORE INSERT OR UPDATE`. Don't drop one thinking the other covers it — they handle different threat models (RLS = user-facing; triggers = admin ops that bypass RLS via the secret key).
 7. **Triggers that enforce cross-user invariants must be `SECURITY DEFINER`** (with `search_path = public` pinned). `enforce_round2_cap` checks "is this topic a Round-1 survivor?" by scanning `round1_votes` across all users — if the trigger runs as `SECURITY INVOKER`, RLS clamps that scan to the caller's own picks and the check fires falsely for legitimate votes. Any new trigger that reads other users' rows needs the same treatment.
-8. **`topics.submitter` is column-hidden from `authenticated`.** The grant on `public.topics` deliberately excludes `submitter` so voters can't see who submitted each topic mid-round. It's surfaced only through `SECURITY DEFINER` functions (`get_results`, admin-side reads). Do not add a blanket `grant select on public.topics` — keep it column-scoped.
+8. **`topics.submitter` and `topics.submitted_by` are column-hidden from `authenticated`.** The grant on `public.topics` is column-scoped and deliberately excludes both: voters can't see who submitted each topic mid-round, nor can they enumerate which rows were contributed by which auth user. `submitter` is surfaced only once results are published (`get_results`) plus admin-side reads; `get_round2_ballot` deliberately returns only topic IDs/text so Round 2 stays blind. `get_my_round1_topic` lets a voter read back only their own suggestion. New columns added later are also implicitly excluded (column-scoped grants don't auto-extend); if you grant a new column, think about whether it leaks identity. Do not add a blanket `grant select on public.topics`.
 9. **`service_role` needs explicit grants.** Adding a new table/view/sequence? Mirror the `authenticated` grants with matching `grant ... to service_role` statements; the admin client uses the service role and will otherwise `permission denied` from a server action.
 
 ### Adding a policy (copy-paste template)
@@ -109,7 +111,7 @@ If you forget step 3, `supabase db pull` will produce confusing diffs — schema
 
 ## Phase state machine
 
-Phases: `setup → round1 → round2 → results → archived` (plus "reopen" transitions that go backwards). Only place that defines legal transitions: `LEGAL_TRANSITIONS` in [`src/app/actions/admin.ts`](src/app/actions/admin.ts). The admin UI's button list (`NEXT_ACTIONS` in [`src/app/admin/page.tsx`](src/app/admin/page.tsx)) must stay consistent with it; the **primary** (forward) action is rendered in purple and placed to the right of any "back" actions.
+Phases: `setup → round1 → round2 → results → archived` (plus one-step "reopen" transitions that go backwards, including `results → round2`). Only place that defines legal transitions: `LEGAL_TRANSITIONS` in [`src/app/actions/admin.ts`](src/app/actions/admin.ts). The admin UI's button list (`NEXT_ACTIONS` in [`src/app/admin/page.tsx`](src/app/admin/page.tsx)) must stay consistent with it; the **primary** (forward) action is rendered in purple and placed to the right of any "back" actions.
 
 If you add a phase, update **all** of:
 
@@ -123,9 +125,21 @@ If you add a phase, update **all** of:
 
 These are UX invariants *and* backend invariants — enforce them in both places or the UI will lie.
 
-- **Round 1 ballot must contain exactly 3 distinct topics.** Frontend disables save until 3 are picked; [`src/app/actions/vote.ts`](src/app/actions/vote.ts) re-checks via `zod .refine` (distinct length = 3).
+- **Round 1 ballot must contain exactly 3 distinct topics.** Frontend tracks `selected.size + (userTopicText.trim() ? 1 : 0)` and disables save unless that equals 3. The server-side check lives **inside** the `submit_round1_ballot` SECURITY DEFINER RPC — the zod schema in [`src/app/actions/vote.ts`](src/app/actions/vote.ts) is just a shape gate (`max(3)` plus optional `user_topic_text`). The DB trigger `enforce_round1_cap` is still defense in depth on the upper bound.
 - **Round 2 ballot must total exactly 10 votes.** Frontend disables save until `sum(weights) === 10`; server re-checks via `.refine` and the `enforce_round2_cap` trigger clamps per-user totals at the DB layer.
 - Weights in `round2_votes.weight` are `smallint` in `[1, 10]`. Zero-weight rows are not stored; if a user drops a topic to 0, we delete the row.
+
+### User-suggested topics (Round 1)
+
+The "Suggest your own topic" textarea at the bottom of the Round 1 ballot creates a real `topics` row, atomically with the user's three vote inserts. Things to know:
+
+- **One live suggestion per (user, session)**, enforced by the partial unique index `topics_one_user_submission_idx` on `(session_id, submitted_by) WHERE submitted_by IS NOT NULL AND removed = false`. If admin marks a suggestion `removed = true`, the slot frees up.
+- **Dedup against existing topics is rejection, not silent merging.** The RPC normalizes the submitted text (same rule as `normalizeTopic` in [`src/app/actions/admin.ts`](src/app/actions/admin.ts)) and rejects with `unique_violation` if any other live topic in the session has the same `normalized_text`. The error message tells the voter to pick the existing topic from the list. **Keep the two normalization functions in lockstep** — divergence would let identical text show up twice.
+- **Clearing the textarea is non-destructive when others depend on it.** If the voter empties their textarea on a re-submit, the RPC drops the topic only when no other voter has voted for it. If others have, the topic stays alive and only the suggester's own R1 vote for it is removed (along with the rest of their wipe-and-reinsert). This avoids invalidating other voters' picks mid-round.
+- **`submitter` snapshot.** When a voter contributes a topic, the RPC fills `topics.submitter` with their display name (auth meta `full_name` → `name` → email local-part). That snapshot is hidden during Round 1/Round 2 voting and is what shows up in Results / admin tallies, indistinguishable from a sheet-imported row.
+- **Why the textarea path bypasses RLS.** The RPC is SECURITY DEFINER because (a) `topics` has no INSERT policy for `authenticated` (rule #5), (b) it needs to read `auth.users` for the display name, and (c) the topic insert + vote inserts must be in the same transaction so a failure on either side rolls back cleanly. If you ever consider replacing the RPC with two-step app code, you'd reintroduce a half-saved state on failure.
+
+If you build a feature that needs to mutate `topics` on behalf of an end user, **extend `submit_round1_ballot` (or write a new SECURITY DEFINER RPC in the same shape)**; do not add a permissive INSERT policy.
 
 ## Server-action patterns
 
@@ -149,14 +163,14 @@ export async function someAdminAction(formData: FormData) {
 }
 ```
 
-Voting actions use the non-privileged `createClient()` from `@/lib/supabase/server` — RLS + triggers are what enforce correctness. Keep it that way; don't "simplify" voting by switching to the admin client (it would bypass the very checks that make one-vote-per-user safe).
+Voting actions use the non-privileged `createClient()` from `@/lib/supabase/server` — RLS + triggers (and, for Round 1, the `submit_round1_ballot` RPC's internal validation) are what enforce correctness. Keep it that way; don't "simplify" voting by switching to the admin client (it would bypass the very checks that make one-vote-per-user safe). Voting actions are rate-limited per user (`r1_submit:${userId}` / similar) — Round 1 in particular can create new `topics` rows, so we don't want a runaway loop.
 
 ## Shared UI helpers
 
 These exist because the same mistakes kept repeating in scattered JSX. **Use them instead of re-implementing the behaviour locally.**
 
 - [`src/lib/pluralize.ts`](src/lib/pluralize.ts) — `pluralize(n, singular, plural?)`. Always use when rendering counts: "1 vote" vs "2 votes", "1 pick" vs "3 picks", "1 participant" vs "4 participants". A PR that hard-codes `"votes"` next to a count will be wrong eventually.
-- [`src/lib/formatTopicDisplay.ts`](src/lib/formatTopicDisplay.ts) — `formatTopicDisplay(text)`. Imported sheet rows often arrive lowercase with weird spacing; this trims, collapses whitespace, and sentence-cases. Apply it anywhere `topic_text` is rendered to a user (admin, ballots, results, preview lists). Never store the formatted version — keep the DB value verbatim.
+- [`src/lib/formatTopicDisplay.ts`](src/lib/formatTopicDisplay.ts) — `formatTopicDisplay(text)`. Imported sheet rows often arrive lowercase with weird spacing; this trims, collapses whitespace, and sentence-cases. Apply it anywhere `topic_text` is rendered to a user (admin, ballots, results, preview lists). Never store the formatted version — keep the DB value verbatim. **Wrapping caveat:** `topic_text` is now user-contributable (Round 1 textarea), so it can contain unbreakable runs (`lolllllll…`, URLs, etc.). When rendering inside a flex row, the topic-text column needs `min-w-0 wrap-anywhere` (Tailwind v4) so the long token wraps inside the card instead of pushing the rest of the row past it. `text-pretty` / `break-words` alone will not break a token that has zero break opportunities. The `LiveResults` admin chart deliberately uses `truncate` instead — that's fine for that surface only.
 - [`src/lib/resultsVisual.ts`](src/lib/resultsVisual.ts) — `voteStrength`, `resultCardStyle`, `voteBarStyle`, `voteBarWidthPercent`, `resultRankClass`. Styles are keyed off vote **strength** (normalized 0–1 across the shown set), not rank index — keeps the visual hierarchy meaningful when there are ties or a small field.
 - [`src/components/BrandMark.tsx`](src/components/BrandMark.tsx) — the logo (`size="sm"` in the nav, `size="lg"` on the empty-state hero). One source of truth for the wordmark; don't re-render "Music League / Topic Voting" inline anywhere else.
 - [`src/components/BackToHomeLink.tsx`](src/components/BackToHomeLink.tsx) — the one purple "Back to home" link, exported alongside `backToHomeLinkClassName` if you need the styles on a different element.
@@ -171,6 +185,8 @@ Anonymous visitors need to see *which phase* is active so the landing page can s
 - Logged-in server components should prefer `getActiveSession()` which reads `sessions` directly under RLS.
 
 If you add another field that logged-out users need, extend the RPC's return type explicitly — don't loosen the grant.
+
+When there is **no active session**, the logged-out landing page still renders `GoogleSignInButton` with admin-oriented copy ("Are you an admin? ...") so an admin has an obvious way to sign in and start the next session. Keep that entry point in `src/app/page.tsx`; once the admin is signed in, the nav-bar `Admin` link appears via `getAdminUser()`.
 
 ## Rate limiting
 
@@ -222,3 +238,5 @@ Expect `unused_index` INFO advisors while tables are empty; those go away once r
 - Don't re-format topic display text inline; use `formatTopicDisplay`.
 - Don't add a "Results" link to the nav — the results page is reachable from the landing CTA when `phase = results`; the nav bar is deliberately minimal.
 - Don't rewrite the wordmark/logo inline — edit `BrandMark` instead so nav and hero stay in sync.
+- Don't add a permissive INSERT policy on `topics` to support a new "users can add a topic" surface — go through (or extend) the `submit_round1_ballot` SECURITY DEFINER RPC so the dedupe, per-user uniqueness, phase gate, and atomicity with `round1_votes` stay enforced.
+- Don't render arbitrary `topic_text` in a flex row without `min-w-0` on the text column and `wrap-anywhere` on the text — voter-suggested topics can contain unbreakable strings that will overflow otherwise.
