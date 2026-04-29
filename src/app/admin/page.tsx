@@ -11,6 +11,7 @@ import {
 import { AdminImport } from "./AdminImport";
 import { DeadlineEditor } from "./DeadlineEditor";
 import { LiveResults, type LiveResultsRow } from "./LiveResults";
+import { TopicEditor } from "./TopicEditor";
 import { VoterRollup, type VoterRow } from "./VoterRollup";
 
 // Admin-side shape of a topic row from the `topics` table. AdminImport owns
@@ -111,6 +112,7 @@ export default async function AdminPage() {
     ? await fetchRound1Tallies(db, session.id, visibleTopics)
     : [];
   const showR2 = session && ["round2", "results"].includes(session.phase);
+  const showTopicEditor = session && ["setup", "round1", "round2"].includes(session.phase);
   const round2Rows: LiveResultsRow[] = showR2
     ? await fetchRound2Tallies(db, session.id, visibleTopics)
     : [];
@@ -334,6 +336,17 @@ export default async function AdminPage() {
               {showVotingData ? <VoterRollup voters={voters} /> : null}
             </>
           )}
+
+          {showTopicEditor ? (
+            <TopicEditor
+              topics={visibleTopics.map((t) => ({
+                id: t.id,
+                topic_text: t.topic_text,
+                submitter: t.submitter,
+              }))}
+              defaultOpen={session.phase === "setup"}
+            />
+          ) : null}
         </div>
       )}
     </div>

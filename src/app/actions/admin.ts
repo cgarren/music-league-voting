@@ -266,11 +266,7 @@ export async function importTopics(payload: {
     session_id: parsed.session_id,
     topic_text: t.topic,
     submitter: t.submitter,
-    normalized_text: t.topic
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .replace(/[^\p{L}\p{N} ]+/gu, "")
-      .trim(),
+    normalized_text: normalizeTopic(t.topic),
   }));
 
   const { error, count } = await db
@@ -298,12 +294,77 @@ export async function removeTopic(formData: FormData): Promise<void> {
   await guard("remove_topic");
   const topic_id = z.string().uuid().parse(formData.get("topic_id"));
   const db = createAdminClient();
+  const session = await getEditableTopicSession(db);
+  const topicIds = [topic_id];
+
+  const [{ error: r1Err }, { error: r2Err }] = await Promise.all([
+    db
+      .from("round1_votes")
+      .delete()
+      .eq("session_id", session.id)
+      .in("topic_id", topicIds),
+    db
+      .from("round2_votes")
+      .delete()
+      .eq("session_id", session.id)
+      .in("topic_id", topicIds),
+  ]);
+  if (r1Err) throw new Error(r1Err.message);
+  if (r2Err) throw new Error(r2Err.message);
+
   const { error } = await db
     .from("topics")
     .update({ removed: true })
-    .eq("id", topic_id);
+    .eq("id", topic_id)
+    .eq("session_id", session.id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
+  revalidatePath("/vote/round1");
+  revalidatePath("/vote/round2");
+  revalidatePath("/results");
+}
+
+const removeTopicsSchema = z.object({
+  topic_ids: z.array(z.string().uuid()).min(1).max(500),
+});
+
+export async function removeTopics(payload: {
+  topic_ids: string[];
+}): Promise<{ removed: number }> {
+  await guard("remove_topics");
+  const parsed = removeTopicsSchema.parse(payload);
+  const db = createAdminClient();
+  const session = await getEditableTopicSession(db);
+  const uniqueIds = [...new Set(parsed.topic_ids)];
+
+  const [{ error: r1Err }, { error: r2Err }] = await Promise.all([
+    db
+      .from("round1_votes")
+      .delete()
+      .eq("session_id", session.id)
+      .in("topic_id", uniqueIds),
+    db
+      .from("round2_votes")
+      .delete()
+      .eq("session_id", session.id)
+      .in("topic_id", uniqueIds),
+  ]);
+  if (r1Err) throw new Error(r1Err.message);
+  if (r2Err) throw new Error(r2Err.message);
+
+  const { error, count } = await db
+    .from("topics")
+    .update({ removed: true }, { count: "exact" })
+    .eq("session_id", session.id)
+    .in("id", uniqueIds)
+    .eq("removed", false);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/vote/round1");
+  revalidatePath("/vote/round2");
+  revalidatePath("/results");
+  return { removed: count ?? 0 };
 }
 
 // -----------------------------------------------------------------------------
@@ -324,6 +385,197 @@ function normalizeTopic(topic: string): string {
     .replace(/\s+/g, " ")
     .replace(/[^\p{L}\p{N} ]+/gu, "")
     .trim();
+}
+
+type AdminDb = ReturnType<typeof createAdminClient>;
+
+async function getEditableTopicSession(db: AdminDb): Promise<{
+  id: string;
+  phase: Phase;
+}> {
+  const { data: session } = await db
+    .from("sessions")
+    .select("id, phase")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (!session) throw new Error("No active session.");
+  if (!["setup", "round1", "round2"].includes(session.phase)) {
+    throw new Error(
+      "Topic editing is only available during setup, round 1, or round 2.",
+    );
+  }
+  return { id: session.id, phase: session.phase as Phase };
+}
+
+const updateTopicSchema = z.object({
+  topic_id: z.string().uuid(),
+  topic: z.string().trim().min(1, "Topic is required.").max(500),
+  submitter: z.string().trim().max(200).default(""),
+});
+
+export async function updateTopic(payload: {
+  topic_id: string;
+  topic: string;
+  submitter: string;
+}): Promise<{ ok: true }> {
+  await guard("update_topic");
+  const parsed = updateTopicSchema.parse(payload);
+  const db = createAdminClient();
+  const session = await getEditableTopicSession(db);
+  const normalized_text = normalizeTopic(parsed.topic);
+  if (!normalized_text) {
+    throw new Error("Topic is empty after normalization.");
+  }
+
+  const { data: current } = await db
+    .from("topics")
+    .select("id")
+    .eq("id", parsed.topic_id)
+    .eq("session_id", session.id)
+    .eq("removed", false)
+    .maybeSingle();
+  if (!current) throw new Error("Topic not found.");
+
+  const { data: dup } = await db
+    .from("topics")
+    .select("id")
+    .eq("session_id", session.id)
+    .eq("normalized_text", normalized_text)
+    .eq("removed", false)
+    .neq("id", parsed.topic_id)
+    .maybeSingle();
+  if (dup) {
+    throw new Error("That topic already exists in this session.");
+  }
+
+  const { error } = await db
+    .from("topics")
+    .update({
+      topic_text: parsed.topic,
+      submitter: parsed.submitter,
+      normalized_text,
+    })
+    .eq("id", parsed.topic_id)
+    .eq("session_id", session.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/vote/round1");
+  revalidatePath("/vote/round2");
+  revalidatePath("/results");
+  return { ok: true };
+}
+
+const mergeTopicsSchema = z.object({
+  source_topic_id: z.string().uuid(),
+  target_topic_id: z.string().uuid(),
+});
+
+export async function mergeTopics(payload: {
+  source_topic_id: string;
+  target_topic_id: string;
+}): Promise<{ ok: true }> {
+  await guard("merge_topics");
+  const parsed = mergeTopicsSchema.parse(payload);
+  if (parsed.source_topic_id === parsed.target_topic_id) {
+    throw new Error("Choose two different topics to merge.");
+  }
+
+  const db = createAdminClient();
+  const session = await getEditableTopicSession(db);
+
+  const { data: topics } = await db
+    .from("topics")
+    .select("id")
+    .eq("session_id", session.id)
+    .in("id", [parsed.source_topic_id, parsed.target_topic_id])
+    .eq("removed", false);
+  if (!topics || topics.length !== 2) {
+    throw new Error("Both topics must exist in the active session.");
+  }
+
+  const [{ data: r1Source }, { data: r1Target }] = await Promise.all([
+    db
+      .from("round1_votes")
+      .select("user_id")
+      .eq("session_id", session.id)
+      .eq("topic_id", parsed.source_topic_id),
+    db
+      .from("round1_votes")
+      .select("user_id")
+      .eq("session_id", session.id)
+      .eq("topic_id", parsed.target_topic_id),
+  ]);
+  const r1TargetUsers = new Set((r1Target ?? []).map((row) => row.user_id));
+  const r1ToInsert = (r1Source ?? [])
+    .filter((row) => !r1TargetUsers.has(row.user_id))
+    .map((row) => ({
+      user_id: row.user_id,
+      topic_id: parsed.target_topic_id,
+      session_id: session.id,
+    }));
+
+  const { error: r1DeleteErr } = await db
+    .from("round1_votes")
+    .delete()
+    .eq("session_id", session.id)
+    .eq("topic_id", parsed.source_topic_id);
+  if (r1DeleteErr) throw new Error(r1DeleteErr.message);
+  if (r1ToInsert.length > 0) {
+    const { error: r1InsertErr } = await db.from("round1_votes").insert(r1ToInsert);
+    if (r1InsertErr) throw new Error(r1InsertErr.message);
+  }
+
+  const [{ data: r2Source }, { data: r2Target }] = await Promise.all([
+    db
+      .from("round2_votes")
+      .select("user_id, weight")
+      .eq("session_id", session.id)
+      .eq("topic_id", parsed.source_topic_id),
+    db
+      .from("round2_votes")
+      .select("user_id, weight")
+      .eq("session_id", session.id)
+      .eq("topic_id", parsed.target_topic_id),
+  ]);
+  const r2ByUser = new Map<string, number>();
+  for (const row of r2Target ?? []) r2ByUser.set(row.user_id, row.weight);
+  for (const row of r2Source ?? []) {
+    r2ByUser.set(row.user_id, (r2ByUser.get(row.user_id) ?? 0) + row.weight);
+  }
+
+  const { error: r2DeleteErr } = await db
+    .from("round2_votes")
+    .delete()
+    .eq("session_id", session.id)
+    .eq("topic_id", parsed.source_topic_id);
+  if (r2DeleteErr) throw new Error(r2DeleteErr.message);
+
+  const r2Upserts = (r2Source ?? []).map((row) => ({
+    user_id: row.user_id,
+    topic_id: parsed.target_topic_id,
+    session_id: session.id,
+    weight: r2ByUser.get(row.user_id) ?? row.weight,
+  }));
+  if (r2Upserts.length > 0) {
+    const { error: r2UpsertErr } = await db
+      .from("round2_votes")
+      .upsert(r2Upserts, { onConflict: "user_id,topic_id" });
+    if (r2UpsertErr) throw new Error(r2UpsertErr.message);
+  }
+
+  const { error: topicErr } = await db
+    .from("topics")
+    .update({ removed: true })
+    .eq("id", parsed.source_topic_id)
+    .eq("session_id", session.id);
+  if (topicErr) throw new Error(topicErr.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/vote/round1");
+  revalidatePath("/vote/round2");
+  revalidatePath("/results");
+  return { ok: true };
 }
 
 /**

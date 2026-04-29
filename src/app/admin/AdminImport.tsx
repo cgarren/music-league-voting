@@ -5,7 +5,6 @@ import {
   addManualTopic,
   fetchSheetPreview,
   importTopics,
-  removeTopic,
 } from "@/app/actions/admin";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import type { ParsedTopic } from "@/lib/sheet";
@@ -181,6 +180,17 @@ export function AdminImport({
               ) : null}
               <button
                 type="button"
+                onClick={() => {
+                  setPreview(null);
+                  setError(null);
+                }}
+                disabled={pending}
+                className="rounded-full border border-[color:var(--color-border)] px-4 py-2 text-sm font-medium hover:border-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel import
+              </button>
+              <button
+                type="button"
                 onClick={handleCommit}
                 disabled={pending || selectedCount === 0}
                 className="rounded-full bg-[color:var(--color-success)] px-5 py-2 text-sm font-medium text-black hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
@@ -279,41 +289,6 @@ export function AdminImport({
         ) : null}
       </div>
 
-      {existingTopics.length > 0 ? (
-        <div className="mt-6">
-          <h4 className="text-sm font-semibold text-[color:var(--color-muted)]">
-            Saved topics ({existingTopics.length})
-          </h4>
-          <ul className="mt-2 space-y-1 text-sm">
-            {existingTopics.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-start justify-between gap-3 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2"
-              >
-                <div>
-                  <p className="text-pretty">
-                    {formatTopicDisplay(t.topic_text)}
-                  </p>
-                  {t.submitter ? (
-                    <p className="text-xs text-[color:var(--color-muted)]">
-                      {t.submitter}
-                    </p>
-                  ) : null}
-                </div>
-                <form action={removeTopic}>
-                  <input type="hidden" name="topic_id" value={t.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-[color:var(--color-muted)] hover:text-[color:var(--color-danger)]"
-                  >
-                    remove
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </section>
   );
 }
