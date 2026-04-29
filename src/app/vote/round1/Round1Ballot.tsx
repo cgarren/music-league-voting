@@ -113,17 +113,12 @@ export function Round1Ballot({
                     Round 1
                 </span>
                 <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight">
-                    Pick your {REQUIRED_PICKS}
-                    {" "}
-                    favorite topics
+                    Pick your {REQUIRED_PICKS} favorite topics
                 </h1>
                 <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-                    You must pick exactly {REQUIRED_PICKS}
-                    {" "}
-                    topics. Don&apos;t
-                    see yours? Suggest your own at the bottom — it counts as one
-                    of your picks. Any topic that gets at least one vote moves
-                    on to Round 2.
+                    You must pick exactly {REQUIRED_PICKS} &nbsp;topics.
+                    Don&apos;t see one you like? Suggest your own at the bottom.
+                    Any topic that gets at least one vote moves on to Round 2.
                 </p>
             </header>
 
@@ -132,9 +127,7 @@ export function Round1Ballot({
                     <span className="font-semibold">{totalPicks}</span>
                     <span className="text-[color:var(--color-muted)]">
                         {" "}
-                        of {REQUIRED_PICKS}
-                        {" "}
-                        selected
+                        of {REQUIRED_PICKS} selected
                     </span>
                     {!isComplete ? (
                         <span className="ml-2 text-xs text-[color:var(--color-muted)]">
