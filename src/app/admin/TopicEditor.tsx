@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { mergeTopics, removeTopics, updateTopic } from "@/app/actions/admin";
+import {
+    addManualTopic,
+    mergeTopics,
+    removeTopics,
+    updateTopic,
+} from "@/app/actions/admin";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 
 type TopicRow = {
@@ -13,9 +18,13 @@ type TopicRow = {
 export function TopicEditor({
     topics,
     defaultOpen,
+    sessionId,
+    canAddTopic,
 }: {
     topics: TopicRow[];
     defaultOpen: boolean;
+    sessionId: string;
+    canAddTopic: boolean;
 }) {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,8 +33,10 @@ export function TopicEditor({
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [mergeTopicInput, setMergeTopicInput] = useState("");
     const [mergeSubmitterInput, setMergeSubmitterInput] = useState("");
+    const [addTopicInput, setAddTopicInput] = useState("");
+    const [addSubmitterInput, setAddSubmitterInput] = useState("");
     const [confirmAction, setConfirmAction] = useState<
-        "merge" | "remove" | null
+        "merge" | "remove" | "add" | null
     >(null);
     const [error, setError] = useState<string | null>(null);
     const [pending, startTransition] = useTransition();
@@ -70,6 +81,14 @@ export function TopicEditor({
                 ? prev.filter((id) => id !== topicId)
                 : [...prev, topicId],
         );
+    };
+
+    const selectAllTopics = () => {
+        setSelectedIds(topics.map((topic) => topic.id));
+    };
+
+    const selectNoTopics = () => {
+        setSelectedIds([]);
     };
 
     const runMerge = () => {
@@ -129,12 +148,38 @@ export function TopicEditor({
         setConfirmAction("remove");
     };
 
+    const requestAdd = () => {
+        if (!canAddTopic) return;
+        setAddTopicInput("");
+        setAddSubmitterInput("");
+        setConfirmAction("add");
+    };
+
+    const runAdd = () => {
+        if (!addTopicInput.trim()) return;
+        setError(null);
+        startTransition(async () => {
+            try {
+                await addManualTopic({
+                    session_id: sessionId,
+                    topic: addTopicInput,
+                    submitter: addSubmitterInput,
+                });
+            } catch (e) {
+                setError((e as Error).message);
+            }
+        });
+    };
+
     const confirmAndRun = () => {
         if (confirmAction === "merge") runMerge();
         if (confirmAction === "remove") runRemove();
+        if (confirmAction === "add") runAdd();
         setConfirmAction(null);
         setMergeTopicInput("");
         setMergeSubmitterInput("");
+        setAddTopicInput("");
+        setAddSubmitterInput("");
     };
 
     return (
@@ -208,6 +253,14 @@ export function TopicEditor({
                         >
                             {pending ? "Removing…" : "Remove"}
                         </button>
+                        <button
+                            type="button"
+                            onClick={requestAdd}
+                            disabled={pending || !canAddTopic}
+                            className="rounded-full bg-[color:var(--color-success)] px-5 py-2 text-sm font-medium text-black hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {pending ? "Adding…" : "Add"}
+                        </button>
                         <p className="text-xs text-[color:var(--color-muted)]">
                             {selectedIds.length} selected
                         </p>
@@ -215,9 +268,32 @@ export function TopicEditor({
                 </div>
 
                 <div className="mt-5">
-                    <h4 className="text-sm font-semibold text-[color:var(--color-muted)]">
-                        Topics ({topics.length})
-                    </h4>
+                    <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-[color:var(--color-muted)]">
+                            Topics ({topics.length})
+                        </h4>
+                        <div className="flex items-center gap-2 text-xs">
+                            <button
+                                type="button"
+                                onClick={selectAllTopics}
+                                disabled={pending || topics.length === 0}
+                                className="text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Select all
+                            </button>
+                            <span className="text-[color:var(--color-border)]">
+                                /
+                            </span>
+                            <button
+                                type="button"
+                                onClick={selectNoTopics}
+                                disabled={pending || selectedIds.length === 0}
+                                className="text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Select none
+                            </button>
+                        </div>
+                    </div>
                     <ul className="mt-2 space-y-1 text-sm">
                         {topics.map((topic) => {
                             const isEditing = editingId === topic.id;
@@ -332,12 +408,16 @@ export function TopicEditor({
                         <h4 className="text-base font-semibold">
                             {confirmAction === "merge"
                                 ? "Confirm merge"
-                                : "Confirm removal"}
+                                : confirmAction === "remove"
+                                  ? "Confirm removal"
+                                  : "Add topic"}
                         </h4>
                         <p className="mt-2 text-sm text-[color:var(--color-muted)]">
                             {confirmAction === "merge"
                                 ? "This will merge 2 selected topics, move votes into the kept topic, and remove the duplicate."
-                                : `This will remove ${selectedIds.length} selected ${selectedIds.length === 1 ? "topic" : "topics"}.`}
+                                : confirmAction === "remove"
+                                  ? `This will remove ${selectedIds.length} selected ${selectedIds.length === 1 ? "topic" : "topics"}.`
+                                  : "Enter a topic and optional submitter, then confirm to add it to the list."}
                         </p>
                         {confirmAction === "merge" ? (
                             <div className="mt-4 space-y-2">
@@ -372,6 +452,36 @@ export function TopicEditor({
                                 </label>
                             </div>
                         ) : null}
+                        {confirmAction === "add" ? (
+                            <div className="mt-4 space-y-2">
+                                <label className="block text-xs text-[color:var(--color-muted)]">
+                                    Topic
+                                    <input
+                                        type="text"
+                                        value={addTopicInput}
+                                        onChange={(e) =>
+                                            setAddTopicInput(e.target.value)
+                                        }
+                                        maxLength={500}
+                                        className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm text-[color:var(--color-foreground)] focus:border-[color:var(--color-accent)] focus:outline-none"
+                                    />
+                                </label>
+                                <label className="block text-xs text-[color:var(--color-muted)]">
+                                    Submitter (optional)
+                                    <input
+                                        type="text"
+                                        value={addSubmitterInput}
+                                        onChange={(e) =>
+                                            setAddSubmitterInput(
+                                                e.target.value,
+                                            )
+                                        }
+                                        maxLength={200}
+                                        className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm text-[color:var(--color-foreground)] focus:border-[color:var(--color-accent)] focus:outline-none"
+                                    />
+                                </label>
+                            </div>
+                        ) : null}
                         <div className="mt-4 flex justify-end gap-2">
                             <button
                                 type="button"
@@ -379,6 +489,8 @@ export function TopicEditor({
                                     setConfirmAction(null);
                                     setMergeTopicInput("");
                                     setMergeSubmitterInput("");
+                                    setAddTopicInput("");
+                                    setAddSubmitterInput("");
                                 }}
                                 disabled={pending}
                                 className="rounded-full border border-[color:var(--color-border)] px-4 py-2 text-sm font-medium hover:border-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -391,17 +503,23 @@ export function TopicEditor({
                                 disabled={
                                     pending ||
                                     (confirmAction === "merge" &&
-                                        !mergeTopicInput.trim())
+                                        !mergeTopicInput.trim()) ||
+                                    (confirmAction === "add" &&
+                                        !addTopicInput.trim())
                                 }
                                 className={
                                     confirmAction === "remove"
                                         ? "rounded-full bg-[color:var(--color-danger)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                                        : "rounded-full bg-[color:var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                                        : confirmAction === "add"
+                                          ? "rounded-full bg-[color:var(--color-success)] px-4 py-2 text-sm font-medium text-black hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                                          : "rounded-full bg-[color:var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
                                 }
                             >
                                 {confirmAction === "merge"
                                     ? "Confirm merge"
-                                    : "Confirm remove"}
+                                    : confirmAction === "remove"
+                                      ? "Confirm remove"
+                                      : "Confirm add"}
                             </button>
                         </div>
                     </div>

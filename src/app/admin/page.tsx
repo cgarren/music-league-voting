@@ -344,6 +344,8 @@ export default async function AdminPage() {
                 topic_text: t.topic_text,
                 submitter: t.submitter,
               }))}
+              sessionId={session.id}
+              canAddTopic={session.phase === "setup"}
               defaultOpen={session.phase === "setup"}
             />
           ) : null}

@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import {
-  addManualTopic,
   fetchSheetPreview,
   importTopics,
 } from "@/app/actions/admin";
@@ -32,35 +31,6 @@ export function AdminImport({
     existingTopics.length > 0,
   );
   const [pending, startTransition] = useTransition();
-
-  // Manual-add form state. Kept separate from the import flow so typing in
-  // the manual form doesn't wipe the preview table.
-  const [manualTopic, setManualTopic] = useState("");
-  const [manualSubmitter, setManualSubmitter] = useState("");
-  const [manualError, setManualError] = useState<string | null>(null);
-  const [manualPending, startManualTransition] = useTransition();
-
-  const handleManualAdd = () => {
-    setManualError(null);
-    const topic = manualTopic.trim();
-    if (!topic) {
-      setManualError("Topic is required.");
-      return;
-    }
-    startManualTransition(async () => {
-      try {
-        await addManualTopic({
-          session_id: sessionId,
-          topic,
-          submitter: manualSubmitter.trim(),
-        });
-        setManualTopic("");
-        setManualSubmitter("");
-      } catch (e) {
-        setManualError((e as Error).message);
-      }
-    });
-  };
 
   const handleFetch = async (formData: FormData) => {
     setError(null);
@@ -124,6 +94,14 @@ export function AdminImport({
     );
   };
 
+  const selectAllPreview = () => {
+    setPreview((prev) => prev?.map((r) => ({ ...r, include: true })) ?? prev);
+  };
+
+  const selectNoPreview = () => {
+    setPreview((prev) => prev?.map((r) => ({ ...r, include: false })) ?? prev);
+  };
+
   const selectedCount = preview?.filter((r) => r.include).length ?? 0;
 
   return (
@@ -162,10 +140,31 @@ export function AdminImport({
       {preview ? (
         <div className="mt-6">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border)] pb-3">
-            <p className="text-sm text-[color:var(--color-muted)]">
-              {selectedCount} of {preview.length} topics selected. Duplicates
-              are pre-deselected; override as needed.
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-[color:var(--color-muted)]">
+                {selectedCount} of {preview.length} topics selected. Duplicates
+                are pre-deselected; override as needed.
+              </p>
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={selectAllPreview}
+                  disabled={pending || preview.length === 0}
+                  className="text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Select all
+                </button>
+                <span className="text-[color:var(--color-border)]">/</span>
+                <button
+                  type="button"
+                  onClick={selectNoPreview}
+                  disabled={pending || selectedCount === 0}
+                  className="text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Select none
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-3 text-sm">
               {existingTopics.length > 0 ? (
                 <label className="flex items-center gap-2">
@@ -235,59 +234,6 @@ export function AdminImport({
           </ul>
         </div>
       ) : null}
-
-      <div className="mt-6 rounded-xl border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/40 p-4">
-        <h4 className="text-sm font-semibold">Add a topic manually</h4>
-        <p className="mt-0.5 text-xs text-[color:var(--color-muted)]">
-          Skips the sheet import — useful for last-minute additions.
-        </p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
-            type="text"
-            value={manualTopic}
-            onChange={(e) => {
-              setManualTopic(e.target.value);
-              if (manualError) setManualError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleManualAdd();
-              }
-            }}
-            placeholder="Topic"
-            maxLength={500}
-            className="flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
-          />
-          <input
-            type="text"
-            value={manualSubmitter}
-            onChange={(e) => setManualSubmitter(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleManualAdd();
-              }
-            }}
-            placeholder="Submitter (optional)"
-            maxLength={200}
-            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-56"
-          />
-          <button
-            type="button"
-            onClick={handleManualAdd}
-            disabled={manualPending || !manualTopic.trim()}
-            className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {manualPending ? "Adding…" : "Add topic"}
-          </button>
-        </div>
-        {manualError ? (
-          <p className="mt-2 rounded-lg border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-3 py-2 text-xs text-[color:var(--color-danger)]">
-            {manualError}
-          </p>
-        ) : null}
-      </div>
 
     </section>
   );
