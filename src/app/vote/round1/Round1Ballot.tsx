@@ -104,8 +104,7 @@ export function Round1Ballot({
     // type their way past the limit. To suggest a topic they need to free up
     // a list slot first. (Conversely if the textarea is already non-empty,
     // we leave it editable so they can fix typos / clear it.)
-    const userTopicLocked =
-        !userTopicActive && selected.size >= REQUIRED_PICKS;
+    const userTopicLocked = !userTopicActive && selected.size >= REQUIRED_PICKS;
 
     return (
         <div className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -117,10 +116,9 @@ export function Round1Ballot({
                     Pick your {REQUIRED_PICKS} favorite topics
                 </h1>
                 <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-                    You must pick exactly {REQUIRED_PICKS} topics. Don&apos;t see
-                    yours? Suggest your own at the bottom — it counts as one of
-                    your picks. Any topic that gets at least one vote moves on
-                    to Round 2.
+                    You must pick exactly {REQUIRED_PICKS} &nbsp;topics.
+                    Don&apos;t see one you like? Suggest your own at the bottom.
+                    Any topic that gets at least one vote moves on to Round 2.
                 </p>
             </header>
 
@@ -172,8 +170,7 @@ export function Round1Ballot({
             <ul className="space-y-2">
                 {topics.map((t) => {
                     const isSelected = selected.has(t.id);
-                    const capped =
-                        !isSelected && totalPicks >= REQUIRED_PICKS;
+                    const capped = !isSelected && totalPicks >= REQUIRED_PICKS;
                     return (
                         <li key={t.id}>
                             <button
@@ -214,12 +211,12 @@ export function Round1Ballot({
                         <div className="flex items-start gap-3">
                             <CheckBox checked={userTopicActive} />
                             <div className="min-w-0 flex-1">
-                                <label
+                                {/* <label
                                     htmlFor="user-topic"
                                     className="block text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-muted)]"
                                 >
                                     Suggest your own topic
-                                </label>
+                                </label> */}
                                 <textarea
                                     id="user-topic"
                                     value={userText}
@@ -227,16 +224,16 @@ export function Round1Ballot({
                                         handleUserTextChange(e.target.value)
                                     }
                                     disabled={userTopicLocked}
-                                    rows={2}
+                                    rows={1}
                                     maxLength={USER_TOPIC_MAX_LEN}
                                     placeholder={
                                         userTopicLocked
                                             ? "Uncheck a topic above to add your own."
-                                            : "A topic that's missing from the list…"
+                                            : "Your topic here…"
                                     }
-                                    className="mt-1 w-full resize-y bg-transparent text-sm font-medium text-pretty outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
+                                    className="mt-0 w-full resize-y bg-transparent text-sm font-medium text-pretty outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
                                 />
-                                <p className="mt-1 text-[11px] text-[color:var(--color-muted)]">
+                                <p className="mt-0 text-[11px] text-[color:var(--color-muted)]">
                                     {userTopicActive
                                         ? "Counts as 1 of your 3 picks. Editable until Round 1 closes."
                                         : "If filled in, this counts as 1 of your 3 picks."}
@@ -261,12 +258,7 @@ function CheckBox({ checked }: { checked: boolean }) {
             aria-hidden
         >
             {checked ? (
-                <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path
                         d="M2 6.5l2.5 2.5L10 3"
                         stroke="currentColor"

@@ -98,10 +98,14 @@ export function Round2Ballot({
           Round 2
         </span>
         <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight">
-          Spend your {TOTAL_VOTES} votes
+          Spend your {TOTAL_VOTES}
+          {" "}
+          votes
         </h1>
         <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-          Pile all {TOTAL_VOTES} on one, or spread them around — you must spend
+          Pile all {TOTAL_VOTES}
+          {" "}
+          on one, or spread them around — you must spend
           every vote. Vote on the idea, not the wording; that gets figured out
           later. You can revise until Round 2 closes.
         </p>
