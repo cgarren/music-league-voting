@@ -599,8 +599,10 @@ export async function addManualTopic(payload: {
     .eq("id", parsed.session_id)
     .maybeSingle();
   if (!session) throw new Error("Session not found.");
-  if (session.phase !== "setup") {
-    throw new Error("Topics can only be added while phase = setup.");
+  if (!["setup", "round1", "round2"].includes(session.phase)) {
+    throw new Error(
+      "Topics can only be added while phase = setup, round1, or round2.",
+    );
   }
 
   const normalized_text = normalizeTopic(parsed.topic);

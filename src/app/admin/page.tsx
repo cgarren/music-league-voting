@@ -345,7 +345,7 @@ export default async function AdminPage() {
                 submitter: t.submitter,
               }))}
               sessionId={session.id}
-              canAddTopic={session.phase === "setup"}
+              canAddTopic={["setup", "round1", "round2"].includes(session.phase)}
               defaultOpen={session.phase === "setup"}
             />
           ) : null}
