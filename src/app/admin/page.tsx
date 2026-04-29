@@ -9,6 +9,7 @@ import {
   updateSheetUrl,
 } from "@/app/actions/admin";
 import { AdminImport } from "./AdminImport";
+import { DeadlineEditor } from "./DeadlineEditor";
 import { LiveResults, type LiveResultsRow } from "./LiveResults";
 import { VoterRollup, type VoterRow } from "./VoterRollup";
 
@@ -260,6 +261,21 @@ export default async function AdminPage() {
                 />
               </dl>
             ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-base font-semibold">Round deadlines</h3>
+              <p className="text-xs text-[color:var(--color-muted)]">
+                Optional. Shown to voters as a target — voting still closes
+                only when you advance the phase.
+              </p>
+            </div>
+            <DeadlineEditor
+              round1DeadlineAt={session.round1_deadline_at}
+              round2DeadlineAt={session.round2_deadline_at}
+              deadlineTimezone={session.deadline_timezone}
+            />
           </section>
 
           {session.phase === "setup" ? (

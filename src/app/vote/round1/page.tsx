@@ -78,6 +78,8 @@ export default async function Round1Page() {
       topics={filteredTopics}
       selected={filteredSelected}
       userTopic={userTopic}
+      deadlineAt={session.round1_deadline_at}
+      deadlineTimezone={session.deadline_timezone}
     />
   );
 }

@@ -42,6 +42,7 @@ create table if not exists public.sessions (
   name          text not null,
   sheet_url     text,
   phase         public.session_phase not null default 'setup',
+  deadline_timezone text,
   created_at    timestamptz not null default now(),
   archived_at   timestamptz
 );

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { submitRound2Ballot } from "@/app/actions/vote";
+import { DeadlineNotice } from "@/components/DeadlineNotice";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import { pluralize } from "@/lib/pluralize";
 
@@ -16,10 +17,14 @@ export function Round2Ballot({
   sessionId,
   topics,
   existing,
+  deadlineAt,
+  deadlineTimezone,
 }: {
   sessionId: string;
   topics: Topic[];
   existing: Record<string, number>;
+  deadlineAt: string | null;
+  deadlineTimezone: string | null;
 }) {
   const [weights, setWeights] = useState<Record<string, number>>(() =>
     Object.fromEntries(topics.map((t) => [t.topic_id, existing[t.topic_id] ?? 0])),
@@ -109,6 +114,11 @@ export function Round2Ballot({
           every vote. Vote on the idea, not the wording; that gets figured out
           later. You can revise until Round 2 closes.
         </p>
+        <DeadlineNotice
+          deadline={deadlineAt}
+          roundLabel="Round 2"
+          originalTimezone={deadlineTimezone}
+        />
       </header>
 
       <div className="sticky top-0 z-10 -mx-6 mb-4 flex items-center justify-between border-b border-[color:var(--color-border)] bg-[color:var(--color-background)]/90 px-6 py-3 backdrop-blur">

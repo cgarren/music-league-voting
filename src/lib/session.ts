@@ -17,9 +17,20 @@ export type ActiveSession = {
   sheet_url: string | null;
   phase: Phase;
   created_at: string;
+  // Optional admin-set target deadlines for each voting round. Informational
+  // only — voting is closed manually via a phase transition, not by these
+  // timestamps. Null when the admin hasn't set (or has cleared) the deadline.
+  round1_deadline_at: string | null;
+  round2_deadline_at: string | null;
+  // Optional IANA timezone label used as the "original timezone" reference
+  // when comparing against the voter's local browser timezone.
+  deadline_timezone: string | null;
 };
 
-export type PublicSession = Omit<ActiveSession, "sheet_url">;
+export type PublicSession = Omit<
+  ActiveSession,
+  "sheet_url" | "round1_deadline_at" | "round2_deadline_at" | "deadline_timezone"
+>;
 
 /**
  * Returns the currently active (non-archived) session, or null if no session
@@ -31,7 +42,9 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("sessions")
-    .select("id, name, sheet_url, phase, created_at")
+    .select(
+      "id, name, sheet_url, phase, created_at, round1_deadline_at, round2_deadline_at, deadline_timezone",
+    )
     .is("archived_at", null)
     .maybeSingle();
   return (data as ActiveSession | null) ?? null;
