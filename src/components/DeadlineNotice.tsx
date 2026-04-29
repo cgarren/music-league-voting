@@ -1,4 +1,10 @@
-import { formatDeadline, isDeadlinePast } from "@/lib/formatDeadline";
+"use client";
+
+import {
+  formatDeadline,
+  formatDeadlineInTimeZone,
+  isDeadlinePast,
+} from "@/lib/formatDeadline";
 
 /**
  * Prominent target-deadline notice for the voting pages.
@@ -11,13 +17,24 @@ import { formatDeadline, isDeadlinePast } from "@/lib/formatDeadline";
 export function DeadlineNotice({
   deadline,
   roundLabel,
+  originalTimezone,
 }: {
   deadline: string | null | undefined;
   roundLabel: string;
+  originalTimezone?: string | null;
 }) {
   const formatted = formatDeadline(deadline);
-  if (!formatted) return null;
   const past = isDeadlinePast(deadline);
+  const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+
+  const showOriginalTzNote =
+    !!originalTimezone &&
+    !!viewerTimezone &&
+    originalTimezone !== viewerTimezone;
+  const originalFormatted = showOriginalTzNote
+    ? formatDeadlineInTimeZone(deadline, originalTimezone)
+    : null;
+  if (!formatted) return null;
 
   return (
     <div
@@ -41,6 +58,11 @@ export function DeadlineNotice({
       {past ? (
         <span className="text-[color:var(--color-muted)] sm:ml-auto sm:text-xs">
           Voting still open until the admin closes the round.
+        </span>
+      ) : null}
+      {originalFormatted && originalTimezone ? (
+        <span className="text-[11px] text-[color:var(--color-muted)] sm:basis-full">
+          Original timezone ({originalTimezone}): {originalFormatted}
         </span>
       ) : null}
     </div>

@@ -24,12 +24,14 @@ export function Round1Ballot({
     selected: initialSelected,
     userTopic,
     deadlineAt,
+    deadlineTimezone,
 }: {
     sessionId: string;
     topics: Topic[];
     selected: string[];
     userTopic: UserTopic;
     deadlineAt: string | null;
+    deadlineTimezone: string | null;
 }) {
     const initialUserText = userTopic?.topic_text ?? "";
     const [selected, setSelected] = useState<Set<string>>(
@@ -123,7 +125,11 @@ export function Round1Ballot({
                     Don&apos;t see one you like? Suggest your own at the bottom.
                     Any topic that gets at least one vote moves on to Round 2.
                 </p>
-                <DeadlineNotice deadline={deadlineAt} roundLabel="Round 1" />
+                <DeadlineNotice
+                    deadline={deadlineAt}
+                    roundLabel="Round 1"
+                    originalTimezone={deadlineTimezone}
+                />
             </header>
 
             <div className="sticky top-0 z-10 -mx-6 mb-4 flex items-center justify-between border-b border-[color:var(--color-border)] bg-[color:var(--color-background)]/90 px-6 py-3 backdrop-blur">

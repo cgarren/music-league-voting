@@ -62,6 +62,7 @@ export default async function Round2Page() {
         (existing ?? []).map((v) => [v.topic_id, v.weight]),
       )}
       deadlineAt={session.round2_deadline_at}
+      deadlineTimezone={session.deadline_timezone}
     />
   );
 }
