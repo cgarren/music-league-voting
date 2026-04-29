@@ -104,8 +104,7 @@ export function Round1Ballot({
     // type their way past the limit. To suggest a topic they need to free up
     // a list slot first. (Conversely if the textarea is already non-empty,
     // we leave it editable so they can fix typos / clear it.)
-    const userTopicLocked =
-        !userTopicActive && selected.size >= REQUIRED_PICKS;
+    const userTopicLocked = !userTopicActive && selected.size >= REQUIRED_PICKS;
 
     return (
         <div className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -117,10 +116,10 @@ export function Round1Ballot({
                     Pick your {REQUIRED_PICKS} favorite topics
                 </h1>
                 <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-                    You must pick exactly {REQUIRED_PICKS} topics. Don&apos;t see
-                    yours? Suggest your own at the bottom — it counts as one of
-                    your picks. Any topic that gets at least one vote moves on
-                    to Round 2.
+                    You must pick exactly {REQUIRED_PICKS} topics. Don&apos;t
+                    see yours? Suggest your own at the bottom — it counts as one
+                    of your picks. Any topic that gets at least one vote moves
+                    on to Round 2.
                 </p>
             </header>
 
@@ -172,8 +171,7 @@ export function Round1Ballot({
             <ul className="space-y-2">
                 {topics.map((t) => {
                     const isSelected = selected.has(t.id);
-                    const capped =
-                        !isSelected && totalPicks >= REQUIRED_PICKS;
+                    const capped = !isSelected && totalPicks >= REQUIRED_PICKS;
                     return (
                         <li key={t.id}>
                             <button
@@ -261,12 +259,7 @@ function CheckBox({ checked }: { checked: boolean }) {
             aria-hidden
         >
             {checked ? (
-                <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path
                         d="M2 6.5l2.5 2.5L10 3"
                         stroke="currentColor"
