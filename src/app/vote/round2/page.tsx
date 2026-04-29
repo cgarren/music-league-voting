@@ -61,6 +61,7 @@ export default async function Round2Page() {
       existing={Object.fromEntries(
         (existing ?? []).map((v) => [v.topic_id, v.weight]),
       )}
+      deadlineAt={session.round2_deadline_at}
     />
   );
 }

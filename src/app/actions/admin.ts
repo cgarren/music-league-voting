@@ -86,6 +86,85 @@ export async function updateSheetUrl(formData: FormData): Promise<void> {
   revalidatePath("/admin");
 }
 
+// -----------------------------------------------------------------------------
+// Round deadlines (informational)
+// -----------------------------------------------------------------------------
+// Admin can set, change, or clear an optional target deadline for each voting
+// round. These values are *purely informational* — they're shown to voters
+// and admins but do not close voting. Only `transitionPhase` closes a round.
+//
+// The form sends a `<input type="datetime-local">` value which is a string
+// without a timezone (e.g. "2026-04-30T20:00"). We treat that as the server's
+// local time on submission (matching the admin's own browser when both run on
+// the same host); a richer admin UX would let the admin pick a timezone, but
+// since this app has a single admin running locally that's overkill. Empty
+// string clears the deadline.
+const deadlineFieldSchema = z
+  .union([z.literal(""), z.string().min(1)])
+  .transform((v) => {
+    if (v === "" || v == null) return null;
+    // Accept either a full ISO timestamp or the datetime-local "YYYY-MM-
+    // DDTHH:MM" shape. new Date() handles both; we then normalize to ISO.
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error("Invalid deadline timestamp.");
+    }
+    return d.toISOString();
+  });
+
+const updateDeadlinesSchema = z.object({
+  round1_deadline_at: deadlineFieldSchema,
+  round2_deadline_at: deadlineFieldSchema,
+  deadline_timezone: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => {
+      const tz = v?.trim() ?? "";
+      if (!tz) return null;
+      // Validate IANA timezone IDs (e.g. "America/New_York").
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date());
+      } catch {
+        throw new Error("Invalid time zone.");
+      }
+      return tz;
+    }),
+});
+
+export async function updateRoundDeadlines(formData: FormData): Promise<void> {
+  await guard("update_round_deadlines");
+  const parsed = updateDeadlinesSchema.parse({
+    round1_deadline_at: (formData.get("round1_deadline_at") ?? "") as string,
+    round2_deadline_at: (formData.get("round2_deadline_at") ?? "") as string,
+    deadline_timezone: (formData.get("deadline_timezone") ?? "") as string,
+  });
+
+  const db = createAdminClient();
+  const { data: session } = await db
+    .from("sessions")
+    .select("id")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (!session) throw new Error("No active session.");
+
+  const { error } = await db
+    .from("sessions")
+    .update({
+      round1_deadline_at: parsed.round1_deadline_at,
+      round2_deadline_at: parsed.round2_deadline_at,
+      deadline_timezone: parsed.deadline_timezone,
+    })
+    .eq("id", session.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/vote/round1");
+  revalidatePath("/vote/round2");
+  revalidatePath("/");
+}
+
 export async function transitionPhase(formData: FormData): Promise<void> {
   await guard("transition_phase");
   const to = z
