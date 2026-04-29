@@ -211,12 +211,12 @@ export function Round1Ballot({
                         <div className="flex items-start gap-3">
                             <CheckBox checked={userTopicActive} />
                             <div className="min-w-0 flex-1">
-                                <label
+                                {/* <label
                                     htmlFor="user-topic"
                                     className="block text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-muted)]"
                                 >
                                     Suggest your own topic
-                                </label>
+                                </label> */}
                                 <textarea
                                     id="user-topic"
                                     value={userText}
@@ -224,16 +224,16 @@ export function Round1Ballot({
                                         handleUserTextChange(e.target.value)
                                     }
                                     disabled={userTopicLocked}
-                                    rows={2}
+                                    rows={1}
                                     maxLength={USER_TOPIC_MAX_LEN}
                                     placeholder={
                                         userTopicLocked
                                             ? "Uncheck a topic above to add your own."
-                                            : "A topic that's missing from the list…"
+                                            : "Your topic here…"
                                     }
-                                    className="mt-1 w-full resize-y bg-transparent text-sm font-medium text-pretty outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
+                                    className="mt-0 w-full resize-y bg-transparent text-sm font-medium text-pretty outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
                                 />
-                                <p className="mt-1 text-[11px] text-[color:var(--color-muted)]">
+                                <p className="mt-0 text-[11px] text-[color:var(--color-muted)]">
                                     {userTopicActive
                                         ? "Counts as 1 of your 3 picks. Editable until Round 1 closes."
                                         : "If filled in, this counts as 1 of your 3 picks."}
