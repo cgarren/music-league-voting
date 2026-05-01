@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { fetchAndParseSheet, sheetUrlSchema } from "@/lib/sheet";
 import { rateLimit } from "@/lib/rate-limit";
+import { parseDeadlineForStorage } from "@/lib/parseDeadlineForStorage";
 import type { Phase } from "@/lib/session";
 
 const LEGAL_TRANSITIONS: Record<Phase, Phase[]> = {
@@ -93,28 +94,15 @@ export async function updateSheetUrl(formData: FormData): Promise<void> {
 // round. These values are *purely informational* — they're shown to voters
 // and admins but do not close voting. Only `transitionPhase` closes a round.
 //
-// The form sends a `<input type="datetime-local">` value which is a string
-// without a timezone (e.g. "2026-04-30T20:00"). We treat that as the server's
-// local time on submission (matching the admin's own browser when both run on
-// the same host); a richer admin UX would let the admin pick a timezone, but
-// since this app has a single admin running locally that's overkill. Empty
-// string clears the deadline.
-const deadlineFieldSchema = z
-  .union([z.literal(""), z.string().min(1)])
-  .transform((v) => {
-    if (v === "" || v == null) return null;
-    // Accept either a full ISO timestamp or the datetime-local "YYYY-MM-
-    // DDTHH:MM" shape. new Date() handles both; we then normalize to ISO.
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) {
-      throw new Error("Invalid deadline timestamp.");
-    }
-    return d.toISOString();
-  });
+// Deadlines: the admin UI sends UTC ISO from the browser (see DeadlineEditor)
+// so server actions running in UTC do not reinterpret naive datetime strings.
+// Naive `YYYY-MM-DDTHH:mm` is still accepted and interpreted in
+// `deadline_timezone` (Original deadline timezone) as a fallback.
+const rawDeadlineSchema = z.union([z.literal(""), z.string().min(1)]);
 
 const updateDeadlinesSchema = z.object({
-  round1_deadline_at: deadlineFieldSchema,
-  round2_deadline_at: deadlineFieldSchema,
+  round1_deadline_at: rawDeadlineSchema,
+  round2_deadline_at: rawDeadlineSchema,
   deadline_timezone: z
     .string()
     .trim()
@@ -141,6 +129,10 @@ export async function updateRoundDeadlines(formData: FormData): Promise<void> {
     deadline_timezone: (formData.get("deadline_timezone") ?? "") as string,
   });
 
+  const tz = parsed.deadline_timezone;
+  const round1_deadline_at = parseDeadlineForStorage(parsed.round1_deadline_at, tz);
+  const round2_deadline_at = parseDeadlineForStorage(parsed.round2_deadline_at, tz);
+
   const db = createAdminClient();
   const { data: session } = await db
     .from("sessions")
@@ -152,9 +144,9 @@ export async function updateRoundDeadlines(formData: FormData): Promise<void> {
   const { error } = await db
     .from("sessions")
     .update({
-      round1_deadline_at: parsed.round1_deadline_at,
-      round2_deadline_at: parsed.round2_deadline_at,
-      deadline_timezone: parsed.deadline_timezone,
+      round1_deadline_at,
+      round2_deadline_at,
+      deadline_timezone: tz,
     })
     .eq("id", session.id);
   if (error) throw new Error(error.message);

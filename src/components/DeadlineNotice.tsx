@@ -36,34 +36,38 @@ export function DeadlineNotice({
     : null;
   if (!formatted) return null;
 
+  const shellClass = past
+    ? "mt-4 flex flex-col gap-3 rounded-xl border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-4 py-3 text-sm"
+    : "mt-4 flex flex-col gap-3 rounded-xl border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-4 py-3 text-sm";
+
+  const primaryRowClass =
+    "flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3";
+
   return (
-    <div
-      role="note"
-      className={
-        past
-          ? "mt-4 flex flex-col gap-1 rounded-xl border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:gap-3"
-          : "mt-4 flex flex-col gap-1 rounded-xl border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:gap-3"
-      }
-    >
-      <span
-        className={
-          past
-            ? "text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-danger)]"
-            : "text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-accent)]"
-        }
-      >
-        {past ? `${roundLabel} deadline passed` : `${roundLabel} deadline`}
-      </span>
-      <span className="font-medium text-pretty">{formatted}</span>
-      {past ? (
-        <span className="text-[color:var(--color-muted)] sm:ml-auto sm:text-xs">
-          Voting still open until the admin closes the round.
+    <div role="note" className={shellClass}>
+      <div className={primaryRowClass}>
+        <span
+          className={
+            past
+              ? "shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-danger)]"
+              : "shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-accent)]"
+          }
+        >
+          {past ? `${roundLabel} deadline passed` : `${roundLabel} deadline`}
         </span>
-      ) : null}
+        <span className="min-w-0 flex-1 font-medium text-pretty sm:min-w-[12rem]">
+          {formatted}
+        </span>
+        {past ? (
+          <span className="text-[color:var(--color-muted)] sm:ml-auto sm:text-xs">
+            Voting still open until the admin closes the round.
+          </span>
+        ) : null}
+      </div>
       {originalFormatted && originalTimezone ? (
-        <span className="text-[11px] text-[color:var(--color-muted)] sm:basis-full">
+        <p className="m-0 text-[11px] leading-snug text-[color:var(--color-muted)] wrap-anywhere text-pretty">
           Original timezone ({originalTimezone}): {originalFormatted}
-        </span>
+        </p>
       ) : null}
     </div>
   );

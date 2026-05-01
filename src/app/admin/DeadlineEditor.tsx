@@ -2,7 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { updateRoundDeadlines } from "@/app/actions/admin";
-import { formatDeadline } from "@/lib/formatDeadline";
+import {
+  formatDeadline,
+  formatDeadlineInTimeZone,
+} from "@/lib/formatDeadline";
+import {
+  instantToDatetimeLocalInZone,
+  parseDeadlineForStorage,
+} from "@/lib/parseDeadlineForStorage";
 
 type Field = "round1_deadline_at" | "round2_deadline_at";
 
@@ -30,19 +37,39 @@ const COMMON_TIMEZONES = [
   "Australia/Sydney",
 ] as const;
 
-function toInputValue(value: string | null): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function deadlineFieldsToNextZone<
+  T extends {
+    deadline_timezone: string;
+    round1_deadline_at: string;
+    round2_deadline_at: string;
+  },
+>(prev: T, nextTz: string): T {
+  const oldTz = prev.deadline_timezone;
+  const conv = (naive: string) => {
+    if (!naive) return "";
+    try {
+      const iso = parseDeadlineForStorage(naive, oldTz);
+      if (!iso) return "";
+      return instantToDatetimeLocalInZone(iso, nextTz);
+    } catch {
+      return naive;
+    }
+  };
+  return {
+    ...prev,
+    deadline_timezone: nextTz,
+    round1_deadline_at: conv(prev.round1_deadline_at),
+    round2_deadline_at: conv(prev.round2_deadline_at),
+  };
 }
 
-function toDisplayValue(inputValue: string): string | null {
-  if (!inputValue) return null;
-  const d = new Date(inputValue);
-  if (Number.isNaN(d.getTime())) return null;
-  return formatDeadline(d.toISOString());
+function safeDeadlineToIso(raw: string, tz: string): string | null {
+  if (!raw.trim()) return null;
+  try {
+    return parseDeadlineForStorage(raw, tz);
+  } catch {
+    return null;
+  }
 }
 
 export function DeadlineEditor({
@@ -64,11 +91,15 @@ export function DeadlineEditor({
     ? resolvedInitialTimezone
     : "UTC";
 
-  const [saved, setSaved] = useState({
-    round1_deadline_at: toInputValue(round1DeadlineAt),
-    round2_deadline_at: toInputValue(round2DeadlineAt),
+  const [saved, setSaved] = useState(() => ({
+    round1_deadline_at: round1DeadlineAt
+      ? instantToDatetimeLocalInZone(round1DeadlineAt, initialTimezone)
+      : "",
+    round2_deadline_at: round2DeadlineAt
+      ? instantToDatetimeLocalInZone(round2DeadlineAt, initialTimezone)
+      : "",
     deadline_timezone: initialTimezone,
-  });
+  }));
   const [values, setValues] = useState(saved);
 
   const isDirty = useMemo(
@@ -94,8 +125,24 @@ export function DeadlineEditor({
     startTransition(async () => {
       try {
         const formData = new FormData();
-        formData.set("round1_deadline_at", values.round1_deadline_at);
-        formData.set("round2_deadline_at", values.round2_deadline_at);
+        formData.set(
+          "round1_deadline_at",
+          values.round1_deadline_at
+            ? parseDeadlineForStorage(
+                values.round1_deadline_at,
+                values.deadline_timezone,
+              ) ?? ""
+            : "",
+        );
+        formData.set(
+          "round2_deadline_at",
+          values.round2_deadline_at
+            ? parseDeadlineForStorage(
+                values.round2_deadline_at,
+                values.deadline_timezone,
+              ) ?? ""
+            : "",
+        );
         formData.set("deadline_timezone", values.deadline_timezone);
         await updateRoundDeadlines(formData);
         setSaved(values);
@@ -105,41 +152,46 @@ export function DeadlineEditor({
     });
   };
 
-  const round1SavedDisplay = toDisplayValue(saved.round1_deadline_at);
-  const round2SavedDisplay = toDisplayValue(saved.round2_deadline_at);
+  const round1SavedIso = useMemo(
+    () => safeDeadlineToIso(saved.round1_deadline_at, saved.deadline_timezone),
+    [saved.round1_deadline_at, saved.deadline_timezone],
+  );
+  const round2SavedIso = useMemo(
+    () => safeDeadlineToIso(saved.round2_deadline_at, saved.deadline_timezone),
+    [saved.round2_deadline_at, saved.deadline_timezone],
+  );
+
+  const round1BrowserLine = round1SavedIso ? formatDeadline(round1SavedIso) : null;
+  const round2BrowserLine = round2SavedIso ? formatDeadline(round2SavedIso) : null;
+  const showSelectedNote = saved.deadline_timezone !== browserTimezone;
+  const round1SelectedLine =
+    round1SavedIso && showSelectedNote
+      ? formatDeadlineInTimeZone(round1SavedIso, saved.deadline_timezone)
+      : null;
+  const round2SelectedLine =
+    round2SavedIso && showSelectedNote
+      ? formatDeadlineInTimeZone(round2SavedIso, saved.deadline_timezone)
+      : null;
 
   return (
-    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-      <DeadlineField
-        label="Round 1 deadline"
-        value={values.round1_deadline_at}
-        onChange={(next) => setField("round1_deadline_at", next)}
-        onClear={() => clearField("round1_deadline_at")}
-        clearDisabled={!values.round1_deadline_at}
-        savedDisplay={round1SavedDisplay}
-      />
-      <DeadlineField
-        label="Round 2 deadline"
-        value={values.round2_deadline_at}
-        onChange={(next) => setField("round2_deadline_at", next)}
-        onClear={() => clearField("round2_deadline_at")}
-        clearDisabled={!values.round2_deadline_at}
-        savedDisplay={round2SavedDisplay}
-      />
-      <div className="sm:col-span-2 flex flex-col gap-1 text-sm">
+    <div className="mt-4 flex flex-col gap-4">
+      <p className="text-xs text-[color:var(--color-muted)]">
+        Choose the deadline timezone first. The date and time fields use that
+        zone, not your browser&apos;s local zone.
+      </p>
+
+      <div className="flex flex-col gap-1 text-sm">
         <label htmlFor="deadline-timezone" className="font-medium">
-          Original deadline timezone
+          Deadline timezone
         </label>
         <div className="flex flex-wrap items-stretch gap-2">
           <select
             id="deadline-timezone"
             value={values.deadline_timezone}
-            onChange={(e) =>
-              setValues((prev) => ({
-                ...prev,
-                deadline_timezone: e.target.value,
-              }))
-            }
+            onChange={(e) => {
+              setError(null);
+              setValues((prev) => deadlineFieldsToNextZone(prev, e.target.value));
+            }}
             className="min-w-[18rem] flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
           >
             {COMMON_TIMEZONES.map((tz) => (
@@ -150,28 +202,48 @@ export function DeadlineEditor({
           </select>
           <button
             type="button"
-            onClick={() =>
-              setValues((prev) => ({
-                ...prev,
-                deadline_timezone: COMMON_TIMEZONES.includes(
-                  browserTimezone as (typeof COMMON_TIMEZONES)[number],
-                )
-                  ? browserTimezone
-                  : "UTC",
-              }))
-            }
+            onClick={() => {
+              setError(null);
+              const nextTz = COMMON_TIMEZONES.includes(
+                browserTimezone as (typeof COMMON_TIMEZONES)[number],
+              )
+                ? browserTimezone
+                : "UTC";
+              setValues((prev) => deadlineFieldsToNextZone(prev, nextTz));
+            }}
             className="rounded-lg border border-[color:var(--color-border)] px-3 text-xs font-medium text-[color:var(--color-muted)] hover:border-[color:var(--color-accent)] hover:text-[color:var(--color-foreground)]"
           >
             Use browser timezone
           </button>
         </div>
         <span className="text-[11px] text-[color:var(--color-muted)]">
-          Voters always see their local time first; if different, we show a
-          small note in this original timezone too.
+          Voters see their own local time first; if it differs from this zone, we
+          show a small note in this deadline timezone on the ballot too.
         </span>
       </div>
 
-      <div className="sm:col-span-2 flex items-center justify-end gap-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <DeadlineField
+          label="Round 1 deadline"
+          value={values.round1_deadline_at}
+          onChange={(next) => setField("round1_deadline_at", next)}
+          onClear={() => clearField("round1_deadline_at")}
+          clearDisabled={!values.round1_deadline_at}
+          browserLine={round1BrowserLine}
+          selectedTimezoneLine={round1SelectedLine}
+        />
+        <DeadlineField
+          label="Round 2 deadline"
+          value={values.round2_deadline_at}
+          onChange={(next) => setField("round2_deadline_at", next)}
+          onClear={() => clearField("round2_deadline_at")}
+          clearDisabled={!values.round2_deadline_at}
+          browserLine={round2BrowserLine}
+          selectedTimezoneLine={round2SelectedLine}
+        />
+      </div>
+
+      <div className="flex items-center justify-end gap-3">
         {error ? (
           <p className="text-xs text-[color:var(--color-danger)]">{error}</p>
         ) : null}
@@ -194,14 +266,16 @@ function DeadlineField({
   onChange,
   onClear,
   clearDisabled,
-  savedDisplay,
+  browserLine,
+  selectedTimezoneLine,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
   onClear: () => void;
   clearDisabled: boolean;
-  savedDisplay: string | null;
+  browserLine: string | null;
+  selectedTimezoneLine: string | null;
 }) {
   return (
     <div className="flex flex-col gap-1 text-sm">
@@ -211,6 +285,7 @@ function DeadlineField({
           type="datetime-local"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          title="Date and time in the deadline timezone you chose above"
           className="flex-1 min-w-0 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
         />
         <button
@@ -222,8 +297,21 @@ function DeadlineField({
           Clear
         </button>
       </div>
-      <span className="text-[11px] text-[color:var(--color-muted)]">
-        {savedDisplay ? `Currently set to ${savedDisplay}.` : "Not set."}
+      <span className="space-y-0.5 text-[11px] text-[color:var(--color-muted)]">
+        {browserLine ? (
+          <>
+            <span className="block">
+              Your time: {browserLine}.
+            </span>
+            {selectedTimezoneLine ? (
+              <span className="block">
+                Deadline timezone: {selectedTimezoneLine}.
+              </span>
+            ) : null}
+          </>
+        ) : (
+          "Not set."
+        )}
       </span>
     </div>
   );
