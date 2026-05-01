@@ -31,7 +31,7 @@ const COPY: Record<Phase, PhaseCopy> = {
         badge: "Round 1 open",
         loggedIn: {
             headline: "Vote now",
-            sub: "Browse the submissions and pick three you would to see this season.",
+            sub: "Browse the submissions and pick three you would like to see this season.",
         },
         loggedOut: {
             headline: "Round 1 is in progress",

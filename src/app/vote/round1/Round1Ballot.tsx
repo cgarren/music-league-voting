@@ -60,10 +60,6 @@ export function Round1Ballot({
             if (next.has(id)) {
                 next.delete(id);
             } else {
-                if (next.size + (userTopicActive ? 1 : 0) >= REQUIRED_PICKS) {
-                    setError(`You can pick at most ${REQUIRED_PICKS} topics.`);
-                    return prev;
-                }
                 next.add(id);
             }
             return next;
@@ -83,7 +79,9 @@ export function Round1Ballot({
         !setsEqual(selected, savedSelection) ||
         userText.trim() !== savedUserText.trim();
     const isComplete = totalPicks === REQUIRED_PICKS;
-    const remaining = REQUIRED_PICKS - totalPicks;
+    const remainingUnder = REQUIRED_PICKS - totalPicks;
+    const extraOver =
+        totalPicks > REQUIRED_PICKS ? totalPicks - REQUIRED_PICKS : 0;
 
     const handleSubmit = () => {
         setError(null);
@@ -121,9 +119,11 @@ export function Round1Ballot({
                     Pick your {REQUIRED_PICKS} favorite topics
                 </h1>
                 <p className="mt-2 text-pretty text-sm text-[color:var(--color-muted)]">
-                    You must pick exactly {REQUIRED_PICKS} &nbsp;topics.
-                    Don&apos;t see one you like? Suggest your own at the bottom.
-                    Any topic that gets at least one vote moves on to Round 2.
+                    Tap topics as you browse; you can choose more than{" "}
+                    {REQUIRED_PICKS} and narrow down anytime. Saving is enabled
+                    only when exactly {REQUIRED_PICKS} &nbsp;picks remain
+                    (including your suggestion if you use it). Topics with at
+                    least one vote move on to Round 2.
                 </p>
                 <DeadlineNotice
                     deadline={deadlineAt}
@@ -134,16 +134,34 @@ export function Round1Ballot({
 
             <div className="sticky top-0 z-10 -mx-6 mb-4 flex items-center justify-between border-b border-[color:var(--color-border)] bg-[color:var(--color-background)]/90 px-6 py-3 backdrop-blur">
                 <p className="text-sm tabular-nums">
-                    <span className="font-semibold">{totalPicks}</span>
-                    <span className="text-[color:var(--color-muted)]">
-                        {" "}
-                        of {REQUIRED_PICKS} selected
-                    </span>
-                    {!isComplete ? (
-                        <span className="ml-2 text-xs text-[color:var(--color-muted)]">
-                            (Pick {remaining} more)
-                        </span>
-                    ) : null}
+                    {extraOver > 0 ? (
+                        <>
+                            <span className="font-semibold">{totalPicks}</span>
+                            <span className="text-[color:var(--color-muted)]">
+                                {" "}
+                                picks (need exactly {REQUIRED_PICKS} to save ·
+                                remove {extraOver} extra
+                                {extraOver === 1 ? "" : "s"})
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="font-semibold">{totalPicks}</span>
+                            <span className="text-[color:var(--color-muted)]">
+                                {" "}
+                                / {REQUIRED_PICKS} picks
+                            </span>
+                            {!isComplete ? (
+                                <span className="ml-2 text-xs text-[color:var(--color-muted)]">
+                                    ({`Pick ${remainingUnder} more`})
+                                </span>
+                            ) : (
+                                <span className="ml-2 text-xs text-[color:var(--color-success)]">
+                                    (Ready to save)
+                                </span>
+                            )}
+                        </>
+                    )}
                 </p>
                 <div className="flex items-center gap-3">
                     {justSaved && !isDirty ? (
@@ -157,7 +175,9 @@ export function Round1Ballot({
                         disabled={pending || !isDirty || !isComplete}
                         title={
                             !isComplete
-                                ? `Pick ${remaining} more topic${remaining === 1 ? "" : "s"} to save your ballot.`
+                                ? extraOver > 0
+                                    ? `You have ${extraOver} too many ${extraOver === 1 ? "pick" : "picks"}—remove extras until exactly ${REQUIRED_PICKS} remain.`
+                                    : `Pick ${remainingUnder} more topic${remainingUnder === 1 ? "" : "s"} to save your ballot.`
                                 : undefined
                         }
                         className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -180,18 +200,16 @@ export function Round1Ballot({
             <ul className="space-y-2">
                 {topics.map((t) => {
                     const isSelected = selected.has(t.id);
-                    const capped = !isSelected && totalPicks >= REQUIRED_PICKS;
                     return (
                         <li key={t.id}>
                             <button
                                 type="button"
                                 onClick={() => toggle(t.id)}
-                                disabled={capped}
                                 className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
                                     isSelected
                                         ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10"
                                         : "border-[color:var(--color-border)] bg-[color:var(--color-surface)] hover:border-[color:var(--color-accent)]/60"
-                                } ${capped ? "cursor-not-allowed opacity-40" : ""}`}
+                                }`}
                             >
                                 <div className="flex items-start gap-3">
                                     <CheckBox checked={isSelected} />
