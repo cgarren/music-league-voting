@@ -1,7 +1,7 @@
 # Music League Topic Voting
 
 A small two-round voting app that turns a Google-Sheet pile of topic
-suggestions into the next ten Music League prompts.
+suggestions into the season's Music League prompts.
 
 - **Round 1 — pick 3.** Signed-in users check exactly three topics they
   would love to vote songs on. Don't see yours? Suggest your own from the
@@ -11,8 +11,10 @@ suggestions into the next ten Music League prompts.
   votes across Round 1 survivors. Stack all ten on your favorite, or spread
   them thin — your call. Submitters stay hidden during voting; vote for the
   idea, and exact wording is settled later.
-- **Results.** Top ten by vote total (with submitters revealed), plus the
-  next ten as "runners up". Topics with zero votes are hidden.
+- **Results.** The top finishers by vote total (with submitters revealed),
+  plus the next ten as "runners up". The admin sets how many leading topics
+  appear on the results page (1–50) from the dashboard; topics with zero votes
+  are hidden from both lists.
 
 One vote per Google account, one admin at a time, phases advanced manually
 from a small admin page.
@@ -33,7 +35,7 @@ flowchart LR
   Topics -->|phase: round1| R1Vote["User picks exactly 3 (may include their own suggestion)"]
   R1Vote -->|any vote count >= 1| Survivors[Round 1 survivors]
   Survivors -->|phase: round2| R2Vote["User distributes 10 votes (stackable)"]
-  R2Vote -->|phase: results| Top10["Top 10 + runners-up (next 10)"]
+  R2Vote -->|phase: results| Published["Published results (admin-set podium + 10 runners up)"]
 ```
 
 The admin advances each phase manually from the admin page; voters can

@@ -35,6 +35,10 @@ async function guard(actionKey: string) {
 const createSessionSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
   sheet_url: sheetUrlSchema.optional().or(z.literal("").transform(() => undefined)),
+  results_podium_count: z.preprocess(
+    (v) => (v === "" || v == null ? 12 : v),
+    z.coerce.number().int().min(1).max(50),
+  ),
 });
 
 export async function createSession(formData: FormData): Promise<void> {
@@ -42,6 +46,7 @@ export async function createSession(formData: FormData): Promise<void> {
   const parsed = createSessionSchema.parse({
     name: formData.get("name"),
     sheet_url: formData.get("sheet_url") || undefined,
+    results_podium_count: formData.get("results_podium_count"),
   });
 
   const db = createAdminClient();
@@ -60,10 +65,43 @@ export async function createSession(formData: FormData): Promise<void> {
   const { error } = await db.from("sessions").insert({
     name: parsed.name,
     sheet_url: parsed.sheet_url ?? null,
+    results_podium_count: parsed.results_podium_count,
   });
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
   revalidatePath("/");
+}
+
+const updateResultsPodiumSchema = z.object({
+  results_podium_count: z.coerce
+    .number()
+    .int()
+    .min(1, "Use a number from 1 to 50.")
+    .max(50, "Use a number from 1 to 50."),
+});
+
+/** How many leading topics appear on `/results`; runners up count is fixed in SQL. */
+export async function updateResultsPodiumCount(
+  formData: FormData,
+): Promise<void> {
+  await guard("update_results_podium");
+  const parsed = updateResultsPodiumSchema.parse({
+    results_podium_count: formData.get("results_podium_count"),
+  });
+  const db = createAdminClient();
+  const { data: session } = await db
+    .from("sessions")
+    .select("id")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (!session) throw new Error("No active session.");
+  const { error } = await db
+    .from("sessions")
+    .update({ results_podium_count: parsed.results_podium_count })
+    .eq("id", session.id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+  revalidatePath("/results");
 }
 
 export async function updateSheetUrl(formData: FormData): Promise<void> {

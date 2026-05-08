@@ -25,11 +25,17 @@ export type ActiveSession = {
   // Optional IANA timezone label used as the "original timezone" reference
   // when comparing against the voter's local browser timezone.
   deadline_timezone: string | null;
+  /** Leading topics on `/results` before the runners-up block (1–50; see admin). */
+  results_podium_count: number;
 };
 
 export type PublicSession = Omit<
   ActiveSession,
-  "sheet_url" | "round1_deadline_at" | "round2_deadline_at" | "deadline_timezone"
+  | "sheet_url"
+  | "round1_deadline_at"
+  | "round2_deadline_at"
+  | "deadline_timezone"
+  | "results_podium_count"
 >;
 
 /**
@@ -43,7 +49,7 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
   const { data } = await supabase
     .from("sessions")
     .select(
-      "id, name, sheet_url, phase, created_at, round1_deadline_at, round2_deadline_at, deadline_timezone",
+      "id, name, sheet_url, phase, created_at, round1_deadline_at, round2_deadline_at, deadline_timezone, results_podium_count",
     )
     .is("archived_at", null)
     .maybeSingle();

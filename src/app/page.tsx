@@ -54,12 +54,12 @@ const COPY: Record<Phase, PhaseCopy> = {
     results: {
         badge: "Results",
         loggedIn: {
-            headline: "The winning topics are in",
-            sub: "See the winners and who submitted them.",
+            headline: "The results are in",
+            sub: "See the leading topics and who submitted them.",
         },
         loggedOut: {
             headline: "Results are in",
-            sub: "Sign in with Google to see the winning topics and who submitted them.",
+            sub: "Sign in with Google to see the leading topics and who submitted them.",
         },
         cta: { href: "/results", label: "View results" },
     },

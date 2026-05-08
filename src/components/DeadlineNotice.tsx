@@ -58,12 +58,12 @@ export function DeadlineNotice({
         <span className="min-w-0 flex-1 font-medium text-pretty sm:min-w-[12rem]">
           {formatted}
         </span>
-        {past ? (
-          <span className="text-[color:var(--color-muted)] sm:ml-auto sm:text-xs">
-            Voting still open until the admin closes the round.
-          </span>
-        ) : null}
       </div>
+      {past ? (
+        <p className="m-0 text-left text-xs text-[color:var(--color-muted)] sm:text-sm">
+          Voting still open until the admin closes the round.
+        </p>
+      ) : null}
       {originalFormatted && originalTimezone ? (
         <p className="m-0 text-[11px] leading-snug text-[color:var(--color-muted)] wrap-anywhere text-pretty">
           Original timezone ({originalTimezone}): {originalFormatted}

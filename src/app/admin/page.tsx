@@ -3,9 +3,11 @@ import { getAdminUser, isAdminConfigured } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getActiveSession, type Phase } from "@/lib/session";
 import { pluralize } from "@/lib/pluralize";
+import { RESULTS_RUNNERS_UP_COUNT } from "@/lib/resultsDisplayConfig";
 import {
   createSession,
   transitionPhase,
+  updateResultsPodiumCount,
   updateSheetUrl,
 } from "@/app/actions/admin";
 import { AdminImport } from "./AdminImport";
@@ -28,7 +30,7 @@ const PHASE_COPY: Record<Phase, string> = {
   setup: "Setup — import & clean topics",
   round1: "Round 1 — voters picking top 3",
   round2: "Round 2 — voters spending 10 votes",
-  results: "Results — top 10 published",
+  results: "Results — published to voters",
   archived: "Archived",
 };
 
@@ -149,7 +151,11 @@ export default async function AdminPage() {
       caption={
         session.phase === "round2"
           ? "Total votes per topic across all Round 2 ballots. Each voter has 10 votes to spend."
-          : "Final vote totals per topic (top 10 were published)."
+          : `Final vote totals per topic (voters see the ${pluralize(
+              session.results_podium_count,
+              "leading topic",
+              "leading topics",
+            )} you set plus ${RESULTS_RUNNERS_UP_COUNT} runners up).`
       }
       rows={round2Rows}
       unitSingular="vote"
@@ -196,6 +202,21 @@ export default async function AdminPage() {
                 placeholder="https://docs.google.com/spreadsheets/d/..."
                 className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
               />
+            </label>
+            <label className="text-sm font-medium">
+              Leading topics on results page
+              <input
+                name="results_podium_count"
+                type="number"
+                min={1}
+                max={50}
+                defaultValue={12}
+                className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+              />
+              <span className="mt-1 block text-xs font-normal text-[color:var(--color-muted)]">
+                Between 1 and 50. Voters also see the next {RESULTS_RUNNERS_UP_COUNT}{" "}
+                runners up. You can change this later in admin.
+              </span>
             </label>
             <button
               type="submit"
@@ -278,6 +299,39 @@ export default async function AdminPage() {
               round2DeadlineAt={session.round2_deadline_at}
               deadlineTimezone={session.deadline_timezone}
             />
+          </section>
+
+          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-base font-semibold">Results page layout</h3>
+              <p className="text-xs text-[color:var(--color-muted)]">
+                Shown when you publish results. Runners up: next {RESULTS_RUNNERS_UP_COUNT}{" "}
+                topics after this many leading entries.
+              </p>
+            </div>
+            <form
+              action={updateResultsPodiumCount}
+              className="mt-4 flex flex-wrap items-end gap-3"
+            >
+              <label className="text-sm font-medium">
+                Leading topics (1–50)
+                <input
+                  name="results_podium_count"
+                  type="number"
+                  min={1}
+                  max={50}
+                  defaultValue={session.results_podium_count}
+                  required
+                  className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+              >
+                Save
+              </button>
+            </form>
           </section>
 
           {session.phase === "setup" ? (
