@@ -10,7 +10,7 @@ Companion notes for working on this codebase. Start with [README.md](README.md) 
 
 ## What this project is
 
-A two-round topic-voting app. Admin imports topic suggestions from a Google Sheet, users do a pick-3 round, then a 10-vote stackable round, then admin publishes the top 10 (with the next 10 shown as "runners up"; zero-vote topics are hidden from both lists). Google SSO, one vote per account. Voters can also contribute one of their own topic ideas from the Round 1 ballot itself; it counts as one of their three picks and joins the topic pool for everyone.
+A two-round topic-voting app. Admin imports topic suggestions from a Google Sheet, users do a pick-3 round, then a 10-vote stackable round, then admin publishes **results**: the **top** topics by vote total plus a **runners-up** list. How many topics appear in each section is **configurable** — see **Results display** under *Ballot invariants*. Zero-vote topics are hidden from both lists. Google SSO, one vote per account. Voters can also contribute one of their own topic ideas from the Round 1 ballot itself; it counts as one of their three picks and joins the topic pool for everyone.
 
 ## Stack pins and gotchas
 
@@ -29,7 +29,7 @@ src/
     admin/         # admin dashboard (page.tsx + AdminImport, LiveResults, VoterRollup)
     vote/round1/   # pick-3 ballot (page.tsx + Round1Ballot client)
     vote/round2/   # 10-vote stackable ballot (page.tsx + Round2Ballot client)
-    results/       # top-10 + next-10 runners-up (gated on phase = results)
+    results/       # top finishers + runners up (split + counts configurable; phase = results)
     auth/callback/ # OAuth code exchange
     layout.tsx, page.tsx, globals.css
   components/
@@ -128,6 +128,7 @@ These are UX invariants *and* backend invariants — enforce them in both places
 - **Round 1 ballot must contain exactly 3 distinct topics.** Frontend tracks `selected.size + (userTopicText.trim() ? 1 : 0)` and disables save unless that equals 3. The server-side check lives **inside** the `submit_round1_ballot` SECURITY DEFINER RPC — the zod schema in [`src/app/actions/vote.ts`](src/app/actions/vote.ts) is just a shape gate (`max(3)` plus optional `user_topic_text`). The DB trigger `enforce_round1_cap` is still defense in depth on the upper bound.
 - **Round 2 ballot must total exactly 10 votes.** Frontend disables save until `sum(weights) === 10`; server re-checks via `.refine` and the `enforce_round2_cap` trigger clamps per-user totals at the DB layer.
 - Weights in `round2_votes.weight` are `smallint` in `[1, 10]`. Zero-weight rows are not stored; if a user drops a topic to 0, we delete the row.
+- **Results display (configurable).** `sessions.results_podium_count` (1–50, default 12) is set when creating a session and editable from **Admin → Results page layout**. [`src/app/results/page.tsx`](src/app/results/page.tsx) splits `get_results` rows by **competition rank**: `public.get_results` uses `rank()` over **vote totals only** (ties share a rank; the next rank skips). Topics with the same vote total are ordered by distinct voter count (higher first), then by raw `topic_text` for a stable tie-break. Every topic with rank ≤ the podium cutoff appears in the main list—even if ties inflate the row count—and the next 10 **rows** after that cutoff are runners up. Runner-up row count is fixed in SQL and mirrored as `RESULTS_RUNNERS_UP_COUNT` in [`src/lib/resultsDisplayConfig.ts`](src/lib/resultsDisplayConfig.ts). Changing the runner-up row count requires a SQL migration.
 
 ### User-suggested topics (Round 1)
 

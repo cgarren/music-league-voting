@@ -49,7 +49,7 @@ const PHASE_COPY: Record<
     round2: {
         badge: "Round 2 in progress",
         headline: "Almost there",
-        sub: "Voters are ranking the Round 1 survivors. The top 10 will be published the moment voting closes.",
+        sub: "Voters are ranking the Round 1 survivors. Ranked results go live the moment voting closes.",
         cta: { href: "/vote/round2", label: "Cast your Round 2 ballot" },
     },
     archived: {
@@ -117,8 +117,9 @@ export default async function ResultsPage() {
         p_session_id: session.id,
     });
     const rows = (data ?? []) as Row[];
-    const winners = rows.filter((r) => r.rank <= 10);
-    const runnersUp = rows.filter((r) => r.rank > 10);
+    const podiumSize = session.results_podium_count;
+    const winners = rows.filter((r) => r.rank <= podiumSize);
+    const runnersUp = rows.filter((r) => r.rank > podiumSize);
     const maxPoints = winners.reduce((m, r) => Math.max(m, r.total_points), 0);
     const minPoints = winners.reduce(
         (m, r) => Math.min(m, r.total_points),
