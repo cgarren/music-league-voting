@@ -26,7 +26,7 @@ from a small admin page.
 - [@supabase/ssr](https://www.npmjs.com/package/@supabase/ssr) for SSR cookies
 - Tailwind v4, zod, papaparse
 
-## How voting flows
+## How voting flows 
 
 ```mermaid
 flowchart LR
