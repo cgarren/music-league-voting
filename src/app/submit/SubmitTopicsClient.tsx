@@ -177,17 +177,18 @@ export function SubmitTopicsClient({
                 </svg>
                 {similarSuggestions.length === 1 ? "A similar suggestion already exists:" : "Similar suggestions already exist:"}
               </span>
-              <ul className="space-y-1.5 pl-5 list-disc text-[color:var(--color-muted)]">
+              <ul className="space-y-1.5 text-[color:var(--color-muted)]">
                 {similarSuggestions.slice(0, 3).map((match) => (
-                  <li key={match.item.id}>
-                    <span className="font-medium text-[color:var(--color-foreground)]">
+                  <li key={match.item.id} className="flex items-start gap-1.5 min-w-0">
+                    <span className="mt-0.5 flex-none text-[color:var(--color-muted)]">•</span>
+                    <span className="min-w-0 wrap-anywhere font-medium text-[color:var(--color-foreground)]">
                       {formatTopicDisplay(match.item.topic_text)}
+                      {match.score > 0.85 && (
+                        <span className="ml-2 rounded-full bg-[color:var(--color-danger)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--color-danger)] tracking-wide">
+                          High match
+                        </span>
+                      )}
                     </span>
-                    {match.score > 0.85 && (
-                      <span className="ml-2 rounded-full bg-[color:var(--color-danger)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--color-danger)] tracking-wide">
-                        High match
-                      </span>
-                    )}
                   </li>
                 ))}
               </ul>

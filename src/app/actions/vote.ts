@@ -21,7 +21,7 @@ const round1PayloadSchema = z.object({
   topic_ids: z.array(z.string().uuid()).max(ROUND1_REQUIRED_PICKS),
   user_topic_text: z
     .string()
-    .max(500)
+    .max(100)
     .nullable()
     .optional()
     .transform((v) => {

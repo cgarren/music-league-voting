@@ -5,6 +5,7 @@ import { submitRound1Ballot } from "@/app/actions/vote";
 import { DeadlineNotice } from "@/components/DeadlineNotice";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import { findSimilarItems } from "@/lib/similarity";
+import { normalizeTopic } from "@/lib/normalize";
 
 type Topic = {
     id: string;
@@ -17,7 +18,7 @@ type UserTopic = {
 } | null;
 
 const REQUIRED_PICKS = 3;
-const USER_TOPIC_MAX_LEN = 500;
+const USER_TOPIC_MAX_LEN = 100;
 
 export function Round1Ballot({
     sessionId,
@@ -53,6 +54,12 @@ export function Round1Ballot({
     const userTopicActive = userText.trim().length > 0;
     const totalPicks = selected.size + (userTopicActive ? 1 : 0);
 
+    const exactMatchTopic = useMemo(() => {
+        const norm = normalizeTopic(userText);
+        if (!norm) return null;
+        return topics.find((t) => normalizeTopic(t.topic_text) === norm) ?? null;
+    }, [userText, topics]);
+
     const similarTopics = useMemo(() => {
         if (pending) return [];
         return findSimilarItems(
@@ -80,9 +87,11 @@ export function Round1Ballot({
     const handleUserTextChange = (next: string) => {
         setError(null);
         setJustSaved(false);
-        // Hard cap by length here as well as on the server so the textarea
+        // Strip newlines (e.g. from paste) so the field stays single-line.
+        const singleLine = next.replace(/[\r\n]+/g, " ");
+        // Hard cap by length here as well as on the server so the input
         // doesn't accept input that would be rejected on save.
-        const clipped = next.slice(0, USER_TOPIC_MAX_LEN);
+        const clipped = singleLine.slice(0, USER_TOPIC_MAX_LEN);
         setUserText(clipped);
     };
 
@@ -97,6 +106,15 @@ export function Round1Ballot({
     const handleSubmit = () => {
         setError(null);
         const trimmedUserText = userText.trim();
+
+        // Block save if the custom topic exactly matches an existing ballot topic.
+        if (trimmedUserText && exactMatchTopic) {
+            setError(
+                `"${trimmedUserText}" already exists on the ballot. Pick it from the list instead of adding a duplicate.`
+            );
+            return;
+        }
+
         startTransition(async () => {
             try {
                 await submitRound1Ballot({
@@ -256,21 +274,21 @@ export function Round1Ballot({
                                 >
                                     Suggest your own topic
                                 </label> */}
-                                <textarea
+                                <input
                                     id="user-topic"
+                                    type="text"
                                     value={userText}
                                     onChange={(e) =>
                                         handleUserTextChange(e.target.value)
                                     }
                                     disabled={userTopicLocked}
-                                    rows={1}
                                     maxLength={USER_TOPIC_MAX_LEN}
                                     placeholder={
                                         userTopicLocked
                                             ? "Uncheck a topic above to add your own."
                                             : "Your topic here…"
                                     }
-                                    className="mt-0 w-full resize-y bg-transparent text-sm font-medium text-pretty outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
+                                    className="w-full bg-transparent text-sm font-medium outline-none placeholder:font-normal placeholder:text-[color:var(--color-muted)] disabled:cursor-not-allowed"
                                 />
                                 <p className="mt-0 text-[11px] text-[color:var(--color-muted)]">
                                     {userTopicActive
@@ -281,15 +299,17 @@ export function Round1Ballot({
                                 {similarTopics.length > 0 && (
                                     <div className="mt-3 rounded-lg border border-[color:var(--color-accent)]/20 bg-[color:var(--color-background)] p-3 text-xs animate-slide-up flex flex-col gap-2 shadow-sm">
                                         <span className="font-semibold text-[color:var(--color-accent)] flex items-center gap-1.5">
-                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <svg className="h-3.5 w-3.5 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                             </svg>
-                                            {similarTopics.length === 1 ? "Already exists on the ballot:" : `${similarTopics.length} options already exist on the ballot:`}
+                                            {similarTopics.length === 1
+                                                ? "A similar topic is on the ballot:"
+                                                : `${similarTopics.length} similar topics are on the ballot:`}
                                         </span>
                                         <ul className="space-y-1.5">
                                             {similarTopics.slice(0, 3).map((match) => (
-                                                <li key={match.item.id} className="flex items-center justify-between gap-2">
-                                                    <span className="font-medium text-[color:var(--color-foreground)] break-words">
+                                                <li key={match.item.id} className="flex items-start justify-between gap-2 min-w-0">
+                                                    <span className="min-w-0 font-medium text-[color:var(--color-foreground)] wrap-anywhere">
                                                         {formatTopicDisplay(match.item.topic_text)}
                                                     </span>
                                                     <button
