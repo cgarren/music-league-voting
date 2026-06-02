@@ -1,23 +1,13 @@
 # Music League Topic Voting
 
-A small two-round voting app that turns a Google-Sheet pile of topic
-suggestions into the season's Music League prompts.
+A collaborative voting app that allows users to submit topic suggestions, votes on them in two subsequent rounds, and publishes results for the season's Music League prompts.
 
-- **Round 1 — pick 3.** Signed-in users check exactly three topics they
-  would love to vote songs on. Don't see yours? Suggest your own from the
-  bottom of the ballot — it counts as one of your three picks. Any topic
-  that gets ≥ 1 vote moves forward.
-- **Round 2 — spend 10 votes.** Voters distribute exactly 10 stackable
-  votes across Round 1 survivors. Stack all ten on your favorite, or spread
-  them thin — your call. Submitters stay hidden during voting; vote for the
-  idea, and exact wording is settled later.
-- **Results.** The top finishers by vote total (with submitters revealed),
-  plus the next ten as "runners up". The admin sets how many leading topics
-  appear on the results page (1–50) from the dashboard; topics with zero votes
-  are hidden from both lists.
+- **Submissions.** Signed-in users submit topic ideas during this phase up to a configurable cap per user. Admin moderates these submissions, deletes duplicates/noise, and bulk-promotes them into the active topic pool.
+- **Round 1 — pick 3.** Signed-in users check exactly three topics they would love to vote songs on. Don't see yours? Suggest your own from the bottom of the ballot — it counts as one of your three picks. Any topic that gets ≥ 1 vote moves forward.
+- **Round 2 — spend 10 votes.** Voters distribute exactly 10 stackable votes across Round 1 survivors. Stack all ten on your favorite, or spread them thin — your call. Submitters stay hidden during voting; vote for the idea, and exact wording is settled later.
+- **Results.** The top finishers by vote total (with submitters revealed), plus the next ten as "runners up". The admin sets how many leading topics appear on the results page (1–50) from the dashboard; topics with zero votes are hidden from both lists.
 
-One vote per Google account, one admin at a time, phases advanced manually
-from a small admin page.
+One vote per Google account, one admin at a time, phases advanced manually from the admin page.
 
 ## Stack
 
@@ -29,34 +19,35 @@ from a small admin page.
 ## How voting flows 
 
 ```mermaid
-flowchart LR
-  Sheet[Google Sheet or manual entry] -->|admin fetch + preview| Topics
-  R1Vote -.->|user-suggested topic| Topics
-  Topics -->|phase: round1| R1Vote["User picks exactly 3 (may include their own suggestion)"]
-  R1Vote -->|any vote count >= 1| Survivors[Round 1 survivors]
-  Survivors -->|phase: round2| R2Vote["User distributes 10 votes (stackable)"]
-  R2Vote -->|phase: results| Published["Published results (admin-set podium + 10 runners up)"]
+flowchart TD
+  Setup[Setup Phase: Legacy Google Sheet or Manual Entry] -->|Add directly| Topics[Active Topics]
+  Submitting[Submitting Phase: Users recommend via /submit] -->|Admin Moderate & Import| Topics
+  Topics -->|Round 1 Phase| R1Vote["User picks exactly 3 (may suggest own topic)"]
+  R1Vote -->|Any pick count >= 1| Survivors[Round 1 Survivors]
+  Survivors -->|Round 2 Phase| R2Vote["User distributes 10 stackable votes"]
+  R2Vote -->|Results Phase| Published["Published Results"]
 ```
 
-The admin advances each phase manually from the admin page; voters can
-edit their ballots until the phase closes. Only one session is active at
-a time; archiving one is a prerequisite for starting the next.
+The admin advances each phase manually from the admin page; voters/submitters can edit their entries until each phase closes. Only one session is active at a time; archiving one is a prerequisite for starting the next.
 
 ## Data model
 
 ```mermaid
 erDiagram
   sessions ||--o{ topics : has
+  sessions ||--o{ submissions : has
   sessions ||--o{ round1_votes : has
   sessions ||--o{ round2_votes : has
   topics   ||--o{ round1_votes : receives
   topics   ||--o{ round2_votes : receives
+  users    ||--o{ submissions : submits
   users    ||--o{ round1_votes : casts
   users    ||--o{ round2_votes : casts
 ```
 
-- `sessions` — one active at a time (partial unique index on `archived_at IS NULL`); `phase` enum drives gating.
-- `topics` — imported from the sheet **or contributed by a voter from the Round 1 ballot**; `normalized_text` powers duplicate hints; `submitted_by` (nullable FK to `auth.users`) tags voter-contributed rows and is partial-unique per session so each voter has at most one live suggestion.
+- `sessions` — one active at a time (partial unique index on `archived_at IS NULL`); `phase` enum drives gating. Includes `submission_cap` to limit user suggestions.
+- `submissions` — holds staging suggestions submitted by users during the `submitting` phase.
+- `topics` — imported from the sheet, promoted from `submissions`, **or contributed by a voter from the Round 1 ballot**; `normalized_text` powers duplicate hints; `submitted_by` (nullable FK to `auth.users`) tags voter-contributed rows and is partial-unique per session so each voter has at most one live suggestion.
 - `round1_votes` — PK `(user_id, topic_id)`; trigger caps at 3 per user per session. Submission goes through the `submit_round1_ballot` SECURITY DEFINER RPC so the optional user-suggested topic and the three vote inserts share a single transaction.
 - `round2_votes` — same PK plus `weight smallint`; trigger caps total weight at 10 and requires the topic to be a Round 1 survivor.
 
@@ -113,27 +104,20 @@ The app reads these environment variables:
    admin-oriented Google sign-in prompt; once signed in, an **Admin** link
    appears in the navbar.
 3. Click **Admin** → **Start session** and give it a name.
-4. Add topics via either (or both) entry point:
-   - **Google Sheet** — paste a shared link (*anyone with the link — Viewer*),
-     hit **Fetch from sheet**, uncheck duplicates/noise, then **Import**.
-     Topic and submitter columns are matched by header name; timestamp /
-     email columns are skipped automatically.
-   - **Manual entry** — type a topic (and optionally a submitter) and click
-     **Add**. Topic text is normalized (trim, collapse whitespace, sentence
-     case) on display, and duplicates are rejected either way.
-5. Click **Open Round 1** → voters see `/vote/round1`. Voters can also
-   add their own topic from the bottom of the ballot — it slots into the
-   list for everyone else and counts as one of the suggester's 3 picks.
-6. When ready, click **Close Round 1 → Open Round 2**.
-7. When ready, click **Close Round 2 → Publish Results**.
-8. If needed, **Reopen Round 2** hides results and lets voters edit again.
-9. **Archive & Start Fresh** lets you run the next session.
+4. (Optional) Open **Session Settings** to configure user submission caps, round deadlines, result podium layout, or legacy Google Sheet imports.
+5. Click **Open Submissions** to let users suggest topics on `/submit` (they will see a submission count and cap indicator). Review and delete suggestions under the **Topic Submissions Moderation** card, and click **Import all submissions** to copy them into the active topic list.
+6. Click **Close submissions → Start Round 1** (triggers a custom warning modal if 0 topics have been added).
+7. Voters see `/vote/round1`. Voters can also suggest their own topic at the bottom of the ballot — it slots into the list for everyone else and counts as one of the suggester's 3 picks.
+8. When ready, click **Close Round 1 → Open Round 2** (triggers a warning modal if 0 votes have been cast).
+9. When ready, click **Close Round 2 → Publish Results**.
+10. If needed, **Reopen Round 2** hides results and lets voters edit again.
+11. **Archive & Start Fresh** lets you run the next session.
 
 ## Security
 
 - Row-Level Security enabled on every public table, with per-user policies
   scoped to `auth.uid()` and the current session phase.
-- `sessions` and `topics` are writable only via the Supabase secret key,
+- `sessions`, `topics`, and `submissions` (mutations) are writable only via the Supabase secret key,
   which is gated by `requireAdmin()` (server-side email check against
   `ADMIN_EMAILS`) before any mutating server action runs.
 - `auth.jwt()` / `user_metadata` are **never** used for authorisation —
@@ -145,7 +129,7 @@ The app reads these environment variables:
   Round 2 ballot RPC returns only topic IDs and text; submitters are revealed
   only once results are published.
 - Google Sheet fetcher enforces host allowlist, timeout, and a 1 MB cap.
-- Admin server actions are rate-limited per user (in-memory token bucket).
+- Admin and voter server actions are rate-limited per user (in-memory token bucket).
 - CSP, `X-Frame-Options: DENY`, Referrer-Policy, and Permissions-Policy
   set in [`next.config.ts`](next.config.ts).
 
@@ -153,8 +137,7 @@ The app reads these environment variables:
 
 1. Push this repo to GitHub and import into Vercel.
 2. Add the four env vars above to the Vercel project.
-3. After the first deploy, add your Vercel URL as a valid site URL in
-   Supabase Auth → URL Configuration.
+3. After the first deploy, add your Vercel URL as a valid site URL in Supabase Auth → URL Configuration.
 
 ## Handy commands
 
@@ -169,7 +152,7 @@ npx tsc --noEmit    # typecheck
 
 ```
 src/
-  app/            # routes (admin, vote/round1, vote/round2, results, auth)
+  app/            # routes (admin, submit, vote/round1, vote/round2, results, auth)
   components/     # shared UI (BrandMark, BackToHomeLink, GoogleSignInButton)
   lib/            # Supabase clients + domain helpers (session, sheet, pluralize, …)
   proxy.ts        # Next.js 16 proxy — refreshes the Supabase session cookie
@@ -178,6 +161,7 @@ supabase/
     0001_init.sql                 # canonical schema: tables, RLS, triggers, RPCs
     0002_user_round1_topics.sql   # adds submitted_by + submit_round1_ballot RPC
     0003_round2_blind_voting.sql  # strips submitter from the Round 2 ballot RPC
+    0011_submissions.sql          # adds submissions table, submitting phase, and promote_submissions RPC
 ```
 
 See [`AGENTS.md`](AGENTS.md) for the full file-by-file breakdown and the
