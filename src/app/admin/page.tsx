@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getAdminUser, isAdminConfigured } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getActiveSession, type Phase } from "@/lib/session";
@@ -174,6 +175,12 @@ export default async function AdminPage() {
             Signed in as {admin.email}
           </p>
         </div>
+        <Link
+          href="/admin/history"
+          className="text-xs text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] hover:underline"
+        >
+          View past sessions &rarr;
+        </Link>
       </div>
 
       {!session ? (

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -662,3 +663,20 @@ export async function addManualTopic(payload: {
   revalidatePath("/admin");
   return { ok: true };
 }
+export async function deleteSession(formData: FormData): Promise<void> {
+  await guard("delete_session");
+  const id = z.string().uuid().parse(formData.get("id"));
+  const db = createAdminClient();
+
+  const { error } = await db
+    .from("sessions")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/history");
+  revalidatePath("/admin");
+  revalidatePath("/");
+  redirect("/admin/history");
+}
+
