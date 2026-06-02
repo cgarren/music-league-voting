@@ -174,6 +174,12 @@ export default async function AdminPage() {
             Signed in as {admin.email}
           </p>
         </div>
+        <Link
+          href="/admin/history"
+          className="text-xs text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] hover:underline"
+        >
+          View past sessions &rarr;
+        </Link>
       </div>
 
       {!session ? (
