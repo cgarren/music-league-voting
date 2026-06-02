@@ -17,10 +17,12 @@ type Submission = {
 const MAX_TOPIC_LEN = 100;
 
 export function SubmitTopicsClient({
+  sessionName,
   submissionCap,
   currentUserId,
   initialSubmissions,
 }: {
+  sessionName: string;
   submissionCap: number | null;
   currentUserId: string;
   initialSubmissions: Submission[];
@@ -113,7 +115,7 @@ export function SubmitTopicsClient({
           Suggest Topics
         </h1>
         <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-          Submit topics you want to see on the voting ballot. Topics can&apos;t be deleted, so be thoughtful about what you submit!
+          Submit topics you want to see on the voting ballot for {sessionName}. Keep in mind, topics can&apos;t be deleted.
         </p>
       </header>
 
@@ -150,6 +152,7 @@ export function SubmitTopicsClient({
                 type="text"
                 name="topic"
                 autoComplete="off"
+                autoFocus={!isCapReached}
                 value={topicText}
                 onChange={(e) => {
                   setError(null);
@@ -222,7 +225,7 @@ export function SubmitTopicsClient({
         </h2>
 
         {optimisticSubmissions.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-[color:var(--color-border)] py-12 text-center">
+          <div className="rounded-2xl border-2 border-dashed border-[color:var(--color-border)] px-6 py-12 text-center">
             <p className="text-sm text-[color:var(--color-muted)]">
               No suggestions have been submitted yet. Be the first!
             </p>

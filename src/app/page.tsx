@@ -17,27 +17,27 @@ type PhaseCopy = {
 
 const COPY: Record<Phase, PhaseCopy> = {
     setup: {
-        badge: "Topics being imported",
+        badge: "Next season pending",
         loggedIn: {
-            headline: "The next round of topics is being prepared",
-            sub: "Topic submissions are being gathered. Come back in a bit.",
+            headline: "The next season is being prepared",
+            sub: "Topic submissions will open soon.",
         },
         loggedOut: {
-            headline: "A new voting session is being prepared",
-            sub: "Topics are being imported. Sign in with Google so you’re ready the moment Round 1 opens.",
+            headline: "The next season is being prepared",
+            sub: "Sign in with Google so you’re ready when submissions open.",
         },
     },
     submitting: {
         badge: "Submissions open",
         loggedIn: {
-            headline: "Suggest a topic",
-            sub: "Submit the topics you want to vote on this season.",
+            headline: "Suggest topics",
+            sub: "Submit topics you want to see in the upcoming season.",
         },
         loggedOut: {
             headline: "Submissions are open",
-            sub: "Sign in with Google to suggest your topics.",
+            sub: "Sign in with Google to suggest topics.",
         },
-        cta: { href: "/submit", label: "Suggest topics" },
+        cta: { href: "/submit", label: "Submit topics" },
     },
     round1: {
         badge: "Round 1 open",
