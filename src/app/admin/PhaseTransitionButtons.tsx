@@ -11,9 +11,11 @@ type Action = {
 export function PhaseTransitionButtons({
   actions,
   topicsCount,
+  r1VotesCount = 0,
 }: {
   actions: Action[];
   topicsCount: number;
+  r1VotesCount?: number;
 }) {
   const [pending, startTransition] = useTransition();
   const [confirmTo, setConfirmTo] = useState<string | null>(null);
@@ -22,6 +24,8 @@ export function PhaseTransitionButtons({
     e.preventDefault();
     // Intercept if trying to advance to round1 with no topics loaded (0 active topics in topics table)
     if (actionTo === "round1" && topicsCount === 0) {
+      setConfirmTo(actionTo);
+    } else if (actionTo === "round2" && r1VotesCount === 0) {
       setConfirmTo(actionTo);
     } else {
       runTransition(actionTo);
@@ -77,13 +81,27 @@ export function PhaseTransitionButtons({
             className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 shadow-2xl animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white">Start Round 1 with no topics?</h3>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
-              There are currently <strong className="text-white">0 active topics</strong> loaded for this session. Please click the import button to import topics before starting Round 1.
-            </p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
-              If you start Round 1 now, voters will not have any options on their ballots. <span className="font-semibold">Are you sure you want to proceed?</span>
-            </p>
+            {confirmTo === "round1" ? (
+              <>
+                <h3 className="text-lg font-semibold text-white">Start Round 1 with no topics?</h3>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
+                  There are currently <strong className="text-white">0 active topics</strong> loaded for this session. Please click the import button to import topics before starting Round 1.
+                </p>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
+                  If you start Round 1 now, voters will not have any options on their ballots. <span className="font-semibold">Are you sure you want to proceed?</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-white">Start Round 2 with no Round 1 votes?</h3>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
+                  There are currently <strong className="text-white">0 votes</strong> cast in Round 1.
+                </p>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)] leading-relaxed">
+                  Starting Round 2 now may result in an empty ballot. <span className="font-semibold">Are you sure you want to proceed?</span>
+                </p>
+              </>
+            )}
 
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -103,7 +121,7 @@ export function PhaseTransitionButtons({
                 disabled={pending}
                 className="rounded-full bg-[color:var(--color-danger)] px-5 py-2 text-xs font-medium text-white hover:bg-[color:var(--color-danger)]/80 transition-colors disabled:opacity-50"
               >
-                {pending ? "Advancing..." : "Yes, start Round 1"}
+                {pending ? "Advancing..." : `Yes, start ${confirmTo === "round1" ? "Round 1" : "Round 2"}`}
               </button>
             </div>
           </div>

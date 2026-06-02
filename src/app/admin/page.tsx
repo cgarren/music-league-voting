@@ -276,6 +276,7 @@ export default async function AdminPage() {
               <PhaseTransitionButtons
                 actions={NEXT_ACTIONS[session.phase]}
                 topicsCount={visibleTopics.length}
+                r1VotesCount={stats?.r1_ballot_count ?? 0}
               />
             </div>
 
@@ -461,101 +462,91 @@ export default async function AdminPage() {
             </div>
           </details>
 
-          {/* Results & Submissions Section */}
-          {session.phase !== "setup" && (
-            <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 flex flex-col gap-6">
-              <div className="border-b border-[color:var(--color-border)] pb-3">
-                <h2 className="text-lg font-semibold text-white">Round Results & Submissions</h2>
-                <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
-                  Live submissions, votes, and participant rollup.
-                </p>
+          {/* Submissions Moderation Section (standalone card) */}
+          {session.phase === "submitting" && (
+            <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)] pb-4 mb-4">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Topic Submissions Moderation</h3>
+                  <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
+                    Review and delete suggestions. Click &quot;Import all submissions&quot; to copy them into the active topic list.
+                  </p>
+                </div>
+                <form action={promoteSubmissions}>
+                  <button
+                    type="submit"
+                    disabled={unimportedCount === 0}
+                    className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                  >
+                    Import all submissions
+                  </button>
+                </form>
               </div>
 
-              {session.phase === "submitting" ? (
-                /* Topic Submissions Moderation Panel */
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)]/60 pb-4 mb-2">
-                    <div>
-                      <h3 className="text-base font-semibold text-white">Topic Submissions Moderation</h3>
-                      <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
-                        Review and delete suggestions. Click &quot;Import all submissions&quot; to copy them into the active topic list.
-                      </p>
-                    </div>
-                    <form action={promoteSubmissions}>
-                      <button
-                        type="submit"
-                        disabled={unimportedCount === 0}
-                        className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-                      >
-                        Import all submissions
-                      </button>
-                    </form>
-                  </div>
+              <div className="text-sm text-[color:var(--color-muted)] mb-4">
+                {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
+              </div>
 
-                  <div className="text-sm text-[color:var(--color-muted)]">
-                    {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
-                  </div>
-
-                  {submissions.length === 0 ? (
-                    <p className="text-sm text-[color:var(--color-muted)] italic py-4">
-                      Waiting for users to submit topics...
-                    </p>
-                  ) : (
-                    <div className="max-h-[400px] overflow-y-auto pr-1">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
-                            <th className="py-2">Topic Text</th>
-                            <th className="py-2">Submitter</th>
-                            <th className="py-2 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
-                          {submissions.map((sub) => {
-                            const user = byId.get(sub.user_id);
-                            const name = resolveName(user);
-                            return (
-                              <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
-                                <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
-                                <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
-                                <td className="py-3 text-right">
-                                  <form action={deleteSubmission} className="inline">
-                                    <input type="hidden" name="id" value={sub.id} />
-                                    <button
-                                      type="submit"
-                                      className="text-xs text-[color:var(--color-danger)] hover:underline"
-                                    >
-                                      Delete
-                                    </button>
-                                  </form>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+              {submissions.length === 0 ? (
+                <p className="text-sm text-[color:var(--color-muted)] italic">
+                  Waiting for users to submit topics...
+                </p>
               ) : (
-                /* Round Results and Voter Rollup */
-                <div className="flex flex-col gap-6">
-                  {["round2", "results"].includes(session.phase) ? (
-                    <>
-                      {r2ResultsEl}
-                      {r1ResultsEl}
-                    </>
-                  ) : (
-                    <>
-                      {r1ResultsEl}
-                      {r2ResultsEl}
-                    </>
-                  )}
-
-                  {showVotingData ? <VoterRollup voters={voters} /> : null}
+                <div className="max-h-[400px] overflow-y-auto pr-1">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
+                        <th className="py-2">Topic Text</th>
+                        <th className="py-2">Submitter</th>
+                        <th className="py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
+                      {submissions.map((sub) => {
+                        const user = byId.get(sub.user_id);
+                        const name = resolveName(user);
+                        return (
+                          <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
+                            <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
+                            <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
+                            <td className="py-3 text-right">
+                              <form action={deleteSubmission} className="inline">
+                                <input type="hidden" name="id" value={sub.id} />
+                                <button
+                                  type="submit"
+                                  className="text-xs text-[color:var(--color-danger)] hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </form>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
+          )}
+
+          {/* Standalone Live Results and Voter Rollup cards */}
+          {showVotingData && (
+            <>
+              {["round2", "results"].includes(session.phase) ? (
+                <>
+                  {r2ResultsEl}
+                  {r1ResultsEl}
+                </>
+              ) : (
+                <>
+                  {r1ResultsEl}
+                  {r2ResultsEl}
+                </>
+              )}
+
+              <VoterRollup voters={voters} />
+            </>
           )}
 
           {showTopicEditor ? (

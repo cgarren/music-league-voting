@@ -217,18 +217,7 @@ export async function transitionPhase(formData: FormData): Promise<void> {
     throw new Error(`Illegal phase transition: ${from} \u2192 ${to}`);
   }
 
-  // Extra safety: don't open round 2 unless at least one round-1 vote exists.
-  if (to === "round2") {
-    const { count } = await db
-      .from("round1_votes")
-      .select("*", { count: "exact", head: true })
-      .eq("session_id", session.id);
-    if (!count || count === 0) {
-      throw new Error(
-        "Cannot open Round 2 \u2014 no Round 1 votes have been cast yet.",
-      );
-    }
-  }
+
 
   const patch: { phase: Phase; archived_at?: string } = { phase: to };
   if (to === "archived") patch.archived_at = new Date().toISOString();
