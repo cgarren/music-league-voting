@@ -48,6 +48,7 @@ export default async function SubmitPage() {
 
   return (
     <SubmitTopicsClient
+      sessionName={session.name}
       submissionCap={session.submission_cap}
       currentUserId={user.id}
       initialSubmissions={submissions ?? []}
