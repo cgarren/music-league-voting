@@ -46,7 +46,7 @@ export function DeleteSessionButton({
             <p className="mt-2 text-sm text-[color:var(--color-muted)]">
               Are you sure you want to permanently delete{" "}
               <strong className="text-white">&ldquo;{sessionName}&rdquo;</strong>?
-              This will erase all associated topics, round votes, and submissions. This action cannot be undone.
+              This will erase all associated topics and round votes. This action cannot be undone.
             </p>
 
             {errorMsg && (

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getAdminUser, isAdminConfigured } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getActiveSession, type Phase } from "@/lib/session";

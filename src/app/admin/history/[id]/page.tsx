@@ -28,7 +28,6 @@ type SessionStats = {
 
 const PHASE_COPY: Record<Phase, string> = {
   setup: "Setup — import & clean topics",
-  submitting: "Submissions — gathering user suggestions",
   round1: "Round 1 — voters picking top 3",
   round2: "Round 2 — voters spending 10 votes",
   results: "Results — published to voters",
@@ -283,7 +282,7 @@ export default async function HistoryDetailPage({
         {/* Configuration Details */}
         <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
           <h2 className="text-lg font-semibold mb-4">Configuration</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <span className="block text-xs uppercase tracking-wider text-[color:var(--color-muted)]">
                 Podium Size
@@ -293,16 +292,6 @@ export default async function HistoryDetailPage({
                 <span className="block text-xs font-normal text-[color:var(--color-muted)]">
                   plus {RESULTS_RUNNERS_UP_COUNT} runners up
                 </span>
-              </span>
-            </div>
-            <div>
-              <span className="block text-xs uppercase tracking-wider text-[color:var(--color-muted)]">
-                Submission Cap
-              </span>
-              <span className="mt-1 block font-medium">
-                {session.submission_cap != null
-                  ? `${session.submission_cap} ${pluralize(session.submission_cap, "topic", "topics")}`
-                  : "Unlimited"}
               </span>
             </div>
             <div>
