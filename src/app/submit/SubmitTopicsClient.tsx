@@ -223,7 +223,7 @@ export function SubmitTopicsClient({
         </h2>
 
         {optimisticSubmissions.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-[color:var(--color-border)] py-12 text-center">
+          <div className="rounded-2xl border-2 border-dashed border-[color:var(--color-border)] px-6 py-12 text-center">
             <p className="text-sm text-[color:var(--color-muted)]">
               No suggestions have been submitted yet. Be the first!
             </p>
