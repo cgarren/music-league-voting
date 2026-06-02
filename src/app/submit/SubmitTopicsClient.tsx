@@ -172,7 +172,7 @@ export function SubmitTopicsClient({
       {/* Submissions List */}
       <section>
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
-          {optimisticSubmissions.length} {pluralize(optimisticSubmissions.length, "Topic Suggestion", "Topic Suggestions")}
+          {optimisticSubmissions.length} {pluralize(optimisticSubmissions.length, "Topic Suggestion", "Topic Suggestions") + " so far..."}
         </h2>
 
         {optimisticSubmissions.length === 0 ? (
@@ -188,11 +188,10 @@ export function SubmitTopicsClient({
               return (
                 <li
                   key={sub.id}
-                  className={`rounded-xl border px-4 py-3.5 flex items-center justify-between transition-all ${
-                    isOwn
+                  className={`rounded-xl border px-4 py-3.5 flex items-center justify-between transition-all ${isOwn
                       ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/[0.03]"
                       : "border-[color:var(--color-border)] bg-[color:var(--color-surface)]"
-                  }`}
+                    }`}
                 >
                   <div className="min-w-0 flex-1 wrap-anywhere pr-3">
                     <p className="text-sm font-medium text-pretty">

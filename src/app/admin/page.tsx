@@ -49,7 +49,7 @@ const NEXT_ACTIONS: Record<Phase, { to: Phase; label: string }[]> = {
   ],
   submitting: [
     { to: "setup", label: "Back to Setup" },
-    { to: "round1", label: "Start Round 1 (No Promotion)" },
+    { to: "round1", label: "Close submissions → Start Round 1" },
   ],
   round1: [
     { to: "setup", label: "Reopen Setup" },
