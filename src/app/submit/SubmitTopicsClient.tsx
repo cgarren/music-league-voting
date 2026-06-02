@@ -133,89 +133,89 @@ export function SubmitTopicsClient({
 
       {/* Quick Add Form — sticky so it stays visible while scrolling through the list */}
       <div className="sticky top-0 z-10 -mx-6 px-6 pt-4 pb-4 bg-[color:var(--color-background)]/90 backdrop-blur border-b border-[color:var(--color-border)] mb-8">
-      <form
-        ref={formRef}
-        onSubmit={handleSubmit}
-        className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-sm"
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="topic-input"
-              className="text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-muted)]"
-            >
-              Add a Topic Suggestion
-            </label>
-            <div className="relative">
-              <input
-                id="topic-input"
-                type="text"
-                name="topic"
-                autoComplete="off"
-                autoFocus={!isCapReached}
-                value={topicText}
-                onChange={(e) => {
-                  setError(null);
-                  setTopicText(e.target.value.slice(0, MAX_TOPIC_LEN));
-                }}
-                disabled={pending || isCapReached}
-                placeholder={
-                  isCapReached
-                    ? "You have reached your submission limit."
-                    : "Enter a topic prompt or idea..."
-                }
-                className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] px-4 py-3 pr-16 text-sm font-medium text-pretty outline-none focus:border-[color:var(--color-accent)]/80 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] tabular-nums text-[color:var(--color-muted)]">
-                {MAX_TOPIC_LEN - topicText.length}
-              </span>
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-sm"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="topic-input"
+                className="text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-muted)]"
+              >
+                Add a Topic Suggestion
+              </label>
+              <div className="relative">
+                <input
+                  id="topic-input"
+                  type="text"
+                  name="topic"
+                  autoComplete="off"
+                  autoFocus={!isCapReached}
+                  value={topicText}
+                  onChange={(e) => {
+                    setError(null);
+                    setTopicText(e.target.value.slice(0, MAX_TOPIC_LEN));
+                  }}
+                  disabled={pending || isCapReached}
+                  placeholder={
+                    isCapReached
+                      ? "You have reached your submission limit."
+                      : "Enter a topic idea..."
+                  }
+                  className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] px-4 py-3 pr-16 text-sm font-medium text-pretty outline-none focus:border-[color:var(--color-accent)]/80 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] tabular-nums text-[color:var(--color-muted)]">
+                  {MAX_TOPIC_LEN - topicText.length}
+                </span>
+              </div>
             </div>
-          </div>
 
-          {similarSuggestions.length > 0 && (
-            <div className="rounded-xl border border-[color:var(--color-accent)]/20 bg-[color:var(--color-accent)]/[0.02] p-4 text-xs animate-slide-up flex flex-col gap-2">
-              <span className="font-semibold text-[color:var(--color-accent)] flex items-center gap-1.5">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                {similarSuggestions.length === 1 ? "A similar suggestion already exists:" : "Similar suggestions already exist:"}
-              </span>
-              <ul className="space-y-1.5 text-[color:var(--color-muted)]">
-                {similarSuggestions.slice(0, 3).map((match) => (
-                  <li key={match.item.id} className="flex items-start gap-1.5 min-w-0">
-                    <span className="mt-0.5 flex-none text-[color:var(--color-muted)]">•</span>
-                    <span className="min-w-0 wrap-anywhere font-medium text-[color:var(--color-foreground)]">
-                      {formatTopicDisplay(match.item.topic_text)}
-                      {match.score > 0.85 && (
-                        <span className="ml-2 rounded-full bg-[color:var(--color-danger)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--color-danger)] tracking-wide">
-                          High match
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1 text-[10px] text-[color:var(--color-muted)]/75">
-                {"If one of these matches your idea, you don't need to submit a duplicate. You'll be able to vote for it during the voting rounds!"}
+            {similarSuggestions.length > 0 && (
+              <div className="rounded-xl border border-[color:var(--color-accent)]/20 bg-[color:var(--color-accent)]/[0.02] p-4 text-xs animate-slide-up flex flex-col gap-2">
+                <span className="font-semibold text-[color:var(--color-accent)] flex items-center gap-1.5">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  {similarSuggestions.length === 1 ? "A similar suggestion already exists:" : "Similar suggestions already exist:"}
+                </span>
+                <ul className="space-y-1.5 text-[color:var(--color-muted)]">
+                  {similarSuggestions.slice(0, 3).map((match) => (
+                    <li key={match.item.id} className="flex items-start gap-1.5 min-w-0">
+                      <span className="mt-0.5 flex-none text-[color:var(--color-muted)]">•</span>
+                      <span className="min-w-0 wrap-anywhere font-medium text-[color:var(--color-foreground)]">
+                        {formatTopicDisplay(match.item.topic_text)}
+                        {match.score > 0.85 && (
+                          <span className="ml-2 rounded-full bg-[color:var(--color-danger)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--color-danger)] tracking-wide">
+                            High match
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[10px] text-[color:var(--color-muted)]/75">
+                  {"If one of these matches your idea, you don't need to submit a duplicate. You'll be able to vote for it during the voting rounds!"}
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <p className="rounded-lg border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-3 py-2 text-xs text-[color:var(--color-danger)]">
+                {error}
               </p>
-            </div>
-          )}
+            )}
 
-          {error && (
-            <p className="rounded-lg border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-3 py-2 text-xs text-[color:var(--color-danger)]">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={pending || isCapReached || !topicText.trim()}
-            className="w-full sm:w-auto self-end rounded-full bg-[color:var(--color-accent)] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors shadow-md shadow-[color:var(--color-accent)]/10"
-          >
-            {pending ? "Adding..." : "Add Suggestion"}
-          </button>
-        </div>
-      </form>
+            <button
+              type="submit"
+              disabled={pending || isCapReached || !topicText.trim()}
+              className="w-full sm:w-auto self-end rounded-full bg-[color:var(--color-accent)] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors shadow-md shadow-[color:var(--color-accent)]/10"
+            >
+              {pending ? "Adding..." : "Add Suggestion"}
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Submissions List */}
