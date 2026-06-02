@@ -739,3 +739,19 @@ export async function promoteSubmissions(_formData: FormData): Promise<void> {
   revalidatePath("/vote/round1");
   revalidatePath("/");
 }
+export async function deleteSession(formData: FormData): Promise<void> {
+  await guard("delete_session");
+  const id = z.string().uuid().parse(formData.get("id"));
+  const db = createAdminClient();
+
+  const { error } = await db
+    .from("sessions")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/history");
+  revalidatePath("/admin");
+  revalidatePath("/");
+  redirect("/admin/history");
+}

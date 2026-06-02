@@ -102,36 +102,36 @@ export default async function AdminPage() {
 
   const topics: AdminTopic[] = session
     ? (
-        await db
-          .from("topics")
-          .select("id, topic_text, submitter, removed, created_at")
-          .eq("session_id", session.id)
-          .order("created_at", { ascending: true })
-      ).data ?? []
+      await db
+        .from("topics")
+        .select("id, topic_text, submitter, removed, created_at")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: true })
+    ).data ?? []
     : [];
   const visibleTopics = topics.filter((t) => !t.removed);
 
   const stats: SessionStats | null = session
     ? ((
-        await db
-          .from("v_session_stats")
-          .select(
-            "topic_count, r1_voter_count, r1_ballot_count, r2_voter_count, r2_ballot_count",
-          )
-          .eq("session_id", session.id)
-          .maybeSingle()
-      ).data as SessionStats | null) ?? null
+      await db
+        .from("v_session_stats")
+        .select(
+          "topic_count, r1_voter_count, r1_ballot_count, r2_voter_count, r2_ballot_count",
+        )
+        .eq("session_id", session.id)
+        .maybeSingle()
+    ).data as SessionStats | null) ?? null
     : null;
 
   // Fetch submissions and user directory if applicable
   const submissions = session && session.phase === "submitting"
     ? (
-        await db
-          .from("submissions")
-          .select("id, topic_text, user_id, created_at")
-          .eq("session_id", session.id)
-          .order("created_at", { ascending: false })
-      ).data ?? []
+      await db
+        .from("submissions")
+        .select("id, topic_text, user_id, created_at")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: false })
+    ).data ?? []
     : [];
 
   const { data: listing } = session
@@ -183,10 +183,10 @@ export default async function AdminPage() {
         session.phase === "round2"
           ? "Total votes per topic across all Round 2 ballots. Each voter has 10 votes to spend."
           : `Final vote totals per topic (voters see the ${pluralize(
-              session.results_podium_count,
-              "leading topic",
-              "leading topics",
-            )} you set plus ${RESULTS_RUNNERS_UP_COUNT} runners up).`
+            session.results_podium_count,
+            "leading topic",
+            "leading topics",
+          )} you set plus ${RESULTS_RUNNERS_UP_COUNT} runners up).`
       }
       rows={round2Rows}
       unitSingular="vote"
@@ -205,6 +205,12 @@ export default async function AdminPage() {
             Signed in as {admin.email}
           </p>
         </div>
+        <Link
+          href="/admin/history"
+          className="text-xs text-[color:var(--color-muted)] hover:text-[color:var(--color-accent)] hover:underline"
+        >
+          View past sessions &rarr;
+        </Link>
       </div>
 
       {!session ? (
@@ -301,10 +307,10 @@ export default async function AdminPage() {
                   sub={
                     stats.r1_ballot_count != null
                       ? `${stats.r1_ballot_count} ${pluralize(
-                          stats.r1_ballot_count,
-                          "pick made",
-                          "picks made",
-                        )}`
+                        stats.r1_ballot_count,
+                        "pick made",
+                        "picks made",
+                      )}`
                       : undefined
                   }
                 />
