@@ -108,7 +108,12 @@ export function AdminImport({
     <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold">Import topics</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold">Import topics</h3>
+            <span className="rounded-full border border-[color:rgba(249,115,22,0.25)] bg-[color:rgba(249,115,22,0.12)] px-2 py-0.5 text-[10px] font-medium text-[color:rgb(251,146,60)]">
+              Legacy
+            </span>
+          </div>
           <p className="mt-1 text-xs text-[color:var(--color-muted)]">
             {existingTopics.length > 0
               ? `Currently ${existingTopics.length} topic${existingTopics.length === 1 ? "" : "s"} saved.`

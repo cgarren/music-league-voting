@@ -40,6 +40,12 @@ const PHASE_COPY: Record<
         headline: "Results aren’t in yet",
         sub: "Topics are still being imported. Check back once Round 1 opens.",
     },
+    submitting: {
+        badge: "Submissions open",
+        headline: "Results aren’t in yet",
+        sub: "Topic submissions are currently open. Check back once voting starts.",
+        cta: { href: "/submit", label: "Suggest topics" },
+    },
     round1: {
         badge: "Round 1 in progress",
         headline: "Results aren’t in yet",

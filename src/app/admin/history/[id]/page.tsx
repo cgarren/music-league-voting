@@ -27,10 +27,11 @@ type SessionStats = {
 };
 
 const PHASE_COPY: Record<Phase, string> = {
-  setup: "Setup — import & clean topics",
-  round1: "Round 1 — voters picking top 3",
-  round2: "Round 2 — voters spending 10 votes",
-  results: "Results — published to voters",
+  setup: "Setup",
+  submitting: "Submissions",
+  round1: "Round 1",
+  round2: "Round 2",
+  results: "Results",
   archived: "Archived",
 };
 

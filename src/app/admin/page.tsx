@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { User } from "@supabase/supabase-js";
 import { getAdminUser, isAdminConfigured } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getActiveSession, type Phase } from "@/lib/session";
@@ -7,15 +8,19 @@ import { pluralize } from "@/lib/pluralize";
 import { RESULTS_RUNNERS_UP_COUNT } from "@/lib/resultsDisplayConfig";
 import {
   createSession,
-  transitionPhase,
   updateResultsPodiumCount,
   updateSheetUrl,
+  updateSubmissionCap,
+  deleteSubmission,
+  promoteSubmissions,
 } from "@/app/actions/admin";
+import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import { AdminImport } from "./AdminImport";
 import { DeadlineEditor } from "./DeadlineEditor";
 import { LiveResults, type LiveResultsRow } from "./LiveResults";
 import { TopicEditor } from "./TopicEditor";
 import { VoterRollup, type VoterRow } from "./VoterRollup";
+import { PhaseTransitionButtons } from "./PhaseTransitionButtons";
 
 // Admin-side shape of a topic row from the `topics` table. AdminImport owns
 // the Setup-phase editing UI, so outside of Setup the admin surface just uses
@@ -23,23 +28,31 @@ import { VoterRollup, type VoterRow } from "./VoterRollup";
 type AdminTopic = {
   id: string;
   topic_text: string;
+  normalized_text: string;
   submitter: string;
   removed: boolean;
 };
 
 const PHASE_COPY: Record<Phase, string> = {
-  setup: "Setup — import & clean topics",
-  round1: "Round 1 — voters picking top 3",
-  round2: "Round 2 — voters spending 10 votes",
-  results: "Results — published to voters",
+  setup: "Setup",
+  submitting: "Submissions",
+  round1: "Round 1",
+  round2: "Round 2",
+  results: "Results",
   archived: "Archived",
 };
 
 // Order: secondary / “back” actions first, primary advance last (right side).
 const NEXT_ACTIONS: Record<Phase, { to: Phase; label: string }[]> = {
-  setup: [{ to: "round1", label: "Open Round 1" }],
+  setup: [
+    { to: "submitting", label: "Open Submissions" },
+  ],
+  submitting: [
+    { to: "setup", label: "Back to Setup" },
+    { to: "round1", label: "Close submissions → Start Round 1" },
+  ],
   round1: [
-    { to: "setup", label: "Reopen Setup" },
+    { to: "submitting", label: "Reopen Submissions" },
     { to: "round2", label: "Close Round 1 → Open Round 2" },
   ],
   round2: [
@@ -88,26 +101,48 @@ export default async function AdminPage() {
 
   const topics: AdminTopic[] = session
     ? (
-        await db
-          .from("topics")
-          .select("id, topic_text, submitter, removed, created_at")
-          .eq("session_id", session.id)
-          .order("created_at", { ascending: true })
-      ).data ?? []
+      await db
+        .from("topics")
+        .select("id, topic_text, normalized_text, submitter, removed, created_at")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: true })
+    ).data ?? []
     : [];
   const visibleTopics = topics.filter((t) => !t.removed);
 
   const stats: SessionStats | null = session
     ? ((
-        await db
-          .from("v_session_stats")
-          .select(
-            "topic_count, r1_voter_count, r1_ballot_count, r2_voter_count, r2_ballot_count",
-          )
-          .eq("session_id", session.id)
-          .maybeSingle()
-      ).data as SessionStats | null) ?? null
+      await db
+        .from("v_session_stats")
+        .select(
+          "topic_count, r1_voter_count, r1_ballot_count, r2_voter_count, r2_ballot_count",
+        )
+        .eq("session_id", session.id)
+        .maybeSingle()
+    ).data as SessionStats | null) ?? null
     : null;
+
+  // Fetch submissions and user directory if applicable
+  const submissions = session && session.phase === "submitting"
+    ? (
+      await db
+        .from("submissions")
+        .select("id, topic_text, normalized_text, user_id, created_at")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: false })
+    ).data ?? []
+    : [];
+
+  const unimportedCount = session && session.phase === "submitting"
+    ? submissions.filter(
+      (s) => !visibleTopics.some((t) => t.normalized_text === s.normalized_text)
+    ).length
+    : 0;
+
+  const { data: listing } = session
+    ? await db.auth.admin.listUsers({ page: 1, perPage: 200 })
+    : { data: null };
+  const byId = new Map(listing?.users?.map((u) => [u.id, u]) ?? []);
 
   // Live tallies and voter rollup are only meaningful once voters are active.
   const showVotingData = session && VOTING_PHASES.includes(session.phase);
@@ -115,12 +150,12 @@ export default async function AdminPage() {
     ? await fetchRound1Tallies(db, session.id, visibleTopics)
     : [];
   const showR2 = session && ["round2", "results"].includes(session.phase);
-  const showTopicEditor = session && ["setup", "round1", "round2"].includes(session.phase);
+  const showTopicEditor = session && ["setup", "submitting", "round1", "round2"].includes(session.phase);
   const round2Rows: LiveResultsRow[] = showR2
     ? await fetchRound2Tallies(db, session.id, visibleTopics)
     : [];
   const voters: VoterRow[] = showVotingData
-    ? await fetchVoterRollup(db, session.id)
+    ? await fetchVoterRollup(db, session.id, byId)
     : [];
   const r2VoteTotal = round2Rows.reduce((s, r) => s + r.value, 0);
 
@@ -153,10 +188,10 @@ export default async function AdminPage() {
         session.phase === "round2"
           ? "Total votes per topic across all Round 2 ballots. Each voter has 10 votes to spend."
           : `Final vote totals per topic (voters see the ${pluralize(
-              session.results_podium_count,
-              "leading topic",
-              "leading topics",
-            )} you set plus ${RESULTS_RUNNERS_UP_COUNT} runners up).`
+            session.results_podium_count,
+            "leading topic",
+            "leading topics",
+          )} you set plus ${RESULTS_RUNNERS_UP_COUNT} runners up).`
       }
       rows={round2Rows}
       unitSingular="vote"
@@ -201,15 +236,7 @@ export default async function AdminPage() {
                 className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
               />
             </label>
-            <label className="text-sm font-medium">
-              Google Sheet URL (optional)
-              <input
-                name="sheet_url"
-                type="url"
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
-              />
-            </label>
+
             <label className="text-sm font-medium">
               Leading topics on results page
               <input
@@ -246,26 +273,11 @@ export default async function AdminPage() {
                   </span>
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {NEXT_ACTIONS[session.phase].map((action, i, arr) => {
-                  const isPrimary = i === arr.length - 1;
-                  return (
-                    <form key={action.to} action={transitionPhase}>
-                      <input type="hidden" name="to" value={action.to} />
-                      <button
-                        type="submit"
-                        className={
-                          isPrimary
-                            ? "rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)]"
-                            : "rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm font-medium hover:border-[color:var(--color-accent)]"
-                        }
-                      >
-                        {action.label}
-                      </button>
-                    </form>
-                  );
-                })}
-              </div>
+              <PhaseTransitionButtons
+                actions={NEXT_ACTIONS[session.phase]}
+                topicsCount={visibleTopics.length}
+                r1VotesCount={stats?.r1_ballot_count ?? 0}
+              />
             </div>
 
             {stats ? (
@@ -277,10 +289,10 @@ export default async function AdminPage() {
                   sub={
                     stats.r1_ballot_count != null
                       ? `${stats.r1_ballot_count} ${pluralize(
-                          stats.r1_ballot_count,
-                          "pick made",
-                          "picks made",
-                        )}`
+                        stats.r1_ballot_count,
+                        "pick made",
+                        "picks made",
+                      )}`
                       : undefined
                   }
                 />
@@ -293,94 +305,233 @@ export default async function AdminPage() {
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold">Round deadlines</h3>
-              <p className="text-xs text-[color:var(--color-muted)]">
-                Optional. Shown to voters as a target — voting still closes
-                only when you advance the phase.
-              </p>
-            </div>
-            <DeadlineEditor
-              round1DeadlineAt={session.round1_deadline_at}
-              round2DeadlineAt={session.round2_deadline_at}
-              deadlineTimezone={session.deadline_timezone}
-            />
-          </section>
-
-          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold">Results page layout</h3>
-              <p className="text-xs text-[color:var(--color-muted)]">
-                Shown when you publish results. Runners up: next {RESULTS_RUNNERS_UP_COUNT}{" "}
-                topics after this many leading entries.
-              </p>
-            </div>
-            <form
-              action={updateResultsPodiumCount}
-              className="mt-4 flex flex-wrap items-end gap-3"
-            >
-              <label className="text-sm font-medium">
-                Leading topics (1–50)
-                <input
-                  name="results_podium_count"
-                  type="number"
-                  min={1}
-                  max={50}
-                  defaultValue={session.results_podium_count}
-                  required
-                  className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
-                />
-              </label>
-              <button
-                type="submit"
-                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
-              >
-                Save
-              </button>
-            </form>
-          </section>
-
-          {session.phase === "setup" ? (
-            <>
-              <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-                <h3 className="text-base font-semibold">Google Sheet</h3>
-                <form
-                  action={updateSheetUrl}
-                  className="mt-3 flex flex-col gap-2 sm:flex-row"
-                >
-                  <input
-                    required
-                    name="sheet_url"
-                    type="url"
-                    defaultValue={session.sheet_url ?? ""}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
+          {/* Settings Section (collapsible details element) */}
+          <details
+            open={session.phase === "setup"}
+            className="group border border-[color:var(--color-border)] rounded-2xl bg-[color:var(--color-surface)] overflow-hidden transition-all duration-200"
+          >
+            <summary className="flex items-center justify-between p-6 font-medium cursor-pointer select-none hover:bg-[color:var(--color-surface-elevated)]/40 transition-colors">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-[color:var(--color-accent)]" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+                <span className="text-base font-semibold text-white">Session Settings</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[color:var(--color-muted)] group-open:hidden">Click to expand</span>
+                <span className="text-xs text-[color:var(--color-muted)] hidden group-open:inline">Click to collapse</span>
+                <span className="text-[color:var(--color-muted)] transition-transform duration-200 group-open:rotate-180">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </span>
+              </div>
+            </summary>
+            <div className="p-6 border-t border-[color:var(--color-border)] flex flex-col gap-6 bg-[color:var(--color-surface-elevated)]/20">
+              {/* Round deadlines */}
+              <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-white">Round deadlines</h4>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    Optional. Shown to voters as a target — voting still closes only when you advance the phase.
+                  </p>
+                </div>
+                <div className="mt-4">
+                  <DeadlineEditor
+                    round1DeadlineAt={session.round1_deadline_at}
+                    round2DeadlineAt={session.round2_deadline_at}
+                    deadlineTimezone={session.deadline_timezone}
                   />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-[color:var(--color-border)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
-                  >
-                    Save URL
-                  </button>
-                </form>
-                <p className="mt-2 text-xs text-[color:var(--color-muted)]">
-                  Sheet must be shared as &quot;Anyone with the link (Viewer)&quot;.
-                  We only fetch from docs.google.com.
-                </p>
+                </div>
               </section>
 
-              <AdminImport
-                sessionId={session.id}
-                sheetUrl={session.sheet_url}
-                existingTopics={visibleTopics.map((t) => ({
-                  id: t.id,
-                  topic_text: t.topic_text,
-                  submitter: t.submitter,
-                }))}
-              />
-            </>
-          ) : (
+              {/* Results page layout */}
+              <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-white">Results page layout</h4>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    Shown when you publish results (usually correlates to number of rounds). The next {RESULTS_RUNNERS_UP_COUNT} topics after the leading topics are shown as runners up.
+                  </p>
+                </div>
+                <form
+                  action={updateResultsPodiumCount}
+                  className="mt-4 flex flex-wrap items-end gap-3"
+                >
+                  <label className="text-sm font-medium">
+                    Leading topics (1–50)
+                    <input
+                      name="results_podium_count"
+                      type="number"
+                      min={1}
+                      max={50}
+                      defaultValue={session.results_podium_count}
+                      required
+                      className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+                  >
+                    Save
+                  </button>
+                </form>
+              </section>
+
+              {/* User submission cap */}
+              {(session.phase === "setup" || session.phase === "submitting") && (
+                <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-white">User Submission Cap</h4>
+                    <p className="text-xs text-[color:var(--color-muted)]">
+                      Limits the number of suggestions a user can submit. Leave blank for unlimited.
+                    </p>
+                  </div>
+                  <form
+                    action={updateSubmissionCap}
+                    className="mt-4 flex flex-wrap items-end gap-3"
+                  >
+                    <label className="text-sm font-medium">
+                      Max submissions per user
+                      <input
+                        name="submission_cap"
+                        type="number"
+                        min={1}
+                        defaultValue={session.submission_cap ?? ""}
+                        placeholder="Unlimited"
+                        className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+                    >
+                      Save Cap
+                    </button>
+                  </form>
+                </section>
+              )}
+
+              {/* Google Sheets configuration (legacy) */}
+              {session.phase === "setup" && (
+                <>
+                  <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-white">Google Sheet</h4>
+                      <span className="rounded-full border border-[color:rgba(249,115,22,0.25)] bg-[color:rgba(249,115,22,0.12)] px-2 py-0.5 text-[10px] font-medium text-[color:rgb(251,146,60)]">
+                        Legacy
+                      </span>
+                    </div>
+                    <form
+                      action={updateSheetUrl}
+                      className="mt-3 flex flex-col gap-2 sm:flex-row"
+                    >
+                      <input
+                        required
+                        name="sheet_url"
+                        type="url"
+                        defaultValue={session.sheet_url ?? ""}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        className="flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-[color:var(--color-border)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+                      >
+                        Save URL
+                      </button>
+                    </form>
+                    <p className="mt-2 text-xs text-[color:var(--color-muted)]">
+                      Sheet must be shared as &quot;Anyone with the link (Viewer)&quot;.
+                      We only fetch from docs.google.com.
+                    </p>
+                  </section>
+
+                  <AdminImport
+                    sessionId={session.id}
+                    sheetUrl={session.sheet_url}
+                    existingTopics={visibleTopics.map((t) => ({
+                      id: t.id,
+                      topic_text: t.topic_text,
+                      submitter: t.submitter,
+                    }))}
+                  />
+                </>
+              )}
+            </div>
+          </details>
+
+          {/* Submissions Moderation Section (standalone card) */}
+          {session.phase === "submitting" && (
+            <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)] pb-4 mb-4">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Topic Submissions Moderation</h3>
+                  <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
+                    Review and delete suggestions. Click &quot;Import all submissions&quot; to copy them into the active topic list.
+                  </p>
+                </div>
+                <form action={promoteSubmissions}>
+                  <button
+                    type="submit"
+                    disabled={unimportedCount === 0}
+                    className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                  >
+                    Import all submissions
+                  </button>
+                </form>
+              </div>
+
+              <div className="text-sm text-[color:var(--color-muted)] mb-4">
+                {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
+              </div>
+
+              {submissions.length === 0 ? (
+                <p className="text-sm text-[color:var(--color-muted)] italic">
+                  Waiting for users to submit topics...
+                </p>
+              ) : (
+                <div className="max-h-[400px] overflow-y-auto pr-1">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
+                        <th className="py-2">Topic Text</th>
+                        <th className="py-2">Submitter</th>
+                        <th className="py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
+                      {submissions.map((sub) => {
+                        const user = byId.get(sub.user_id);
+                        const name = resolveName(user);
+                        return (
+                          <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
+                            <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
+                            <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
+                            <td className="py-3 text-right">
+                              <form action={deleteSubmission} className="inline">
+                                <input type="hidden" name="id" value={sub.id} />
+                                <button
+                                  type="submit"
+                                  className="text-xs text-[color:var(--color-danger)] hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </form>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Standalone Live Results and Voter Rollup cards */}
+          {showVotingData && (
             <>
               {["round2", "results"].includes(session.phase) ? (
                 <>
@@ -394,7 +545,7 @@ export default async function AdminPage() {
                 </>
               )}
 
-              {showVotingData ? <VoterRollup voters={voters} /> : null}
+              <VoterRollup voters={voters} />
             </>
           )}
 
@@ -507,6 +658,7 @@ async function fetchRound2Tallies(
 async function fetchVoterRollup(
   db: AdminDb,
   sessionId: string,
+  byId: Map<string, User>,
 ): Promise<VoterRow[]> {
   const [{ data: r1 }, { data: r2 }] = await Promise.all([
     db.from("round1_votes").select("user_id").eq("session_id", sessionId),
@@ -530,16 +682,6 @@ async function fetchVoterRollup(
 
   const voterIds = new Set<string>([...r1Picks.keys(), ...r2VotesByUser.keys()]);
   if (voterIds.size === 0) return [];
-
-  // auth.admin.listUsers pages through all users; for this app's scale (a few
-  // dozen voters at most) a single 200-user page is plenty. If usage grows
-  // we'd switch to paginating or a SECURITY DEFINER RPC that joins directly
-  // against auth.users.
-  const { data: listing } = await db.auth.admin.listUsers({
-    page: 1,
-    perPage: 200,
-  });
-  const byId = new Map(listing?.users?.map((u) => [u.id, u]) ?? []);
 
   const rows: VoterRow[] = [];
   for (const id of voterIds) {

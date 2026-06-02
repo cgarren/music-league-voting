@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { submitRound1Ballot } from "@/app/actions/vote";
 import { DeadlineNotice } from "@/components/DeadlineNotice";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
+import { findSimilarItems } from "@/lib/similarity";
 
 type Topic = {
     id: string;
@@ -51,6 +52,16 @@ export function Round1Ballot({
     // disagree with the count we send to the server.
     const userTopicActive = userText.trim().length > 0;
     const totalPicks = selected.size + (userTopicActive ? 1 : 0);
+
+    const similarTopics = useMemo(() => {
+        if (pending) return [];
+        return findSimilarItems(
+            userText,
+            topics,
+            (t) => t.topic_text,
+            0.55
+        );
+    }, [userText, topics, pending]);
 
     const toggle = (id: string) => {
         setError(null);
@@ -266,6 +277,42 @@ export function Round1Ballot({
                                         ? "Counts as 1 of your 3 picks. Editable until Round 1 closes."
                                         : "If filled in, this counts as 1 of your 3 picks."}
                                 </p>
+
+                                {similarTopics.length > 0 && (
+                                    <div className="mt-3 rounded-lg border border-[color:var(--color-accent)]/20 bg-[color:var(--color-background)] p-3 text-xs animate-slide-up flex flex-col gap-2 shadow-sm">
+                                        <span className="font-semibold text-[color:var(--color-accent)] flex items-center gap-1.5">
+                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                            </svg>
+                                            {similarTopics.length === 1 ? "Already exists on the ballot:" : `${similarTopics.length} options already exist on the ballot:`}
+                                        </span>
+                                        <ul className="space-y-1.5">
+                                            {similarTopics.slice(0, 3).map((match) => (
+                                                <li key={match.item.id} className="flex items-center justify-between gap-2">
+                                                    <span className="font-medium text-[color:var(--color-foreground)] break-words">
+                                                        {formatTopicDisplay(match.item.topic_text)}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelected((prev) => {
+                                                                const next = new Set(prev);
+                                                                next.add(match.item.id);
+                                                                return next;
+                                                            });
+                                                            setUserText("");
+                                                            setError(null);
+                                                            setJustSaved(false);
+                                                        }}
+                                                        className="flex-none rounded-full bg-[color:var(--color-accent)]/15 px-2.5 py-1 text-[10px] font-semibold text-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/25 transition-colors border border-[color:var(--color-accent)]/20"
+                                                    >
+                                                        Vote for this instead
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

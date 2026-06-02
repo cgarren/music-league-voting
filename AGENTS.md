@@ -10,7 +10,7 @@ Companion notes for working on this codebase. Start with [README.md](README.md) 
 
 ## What this project is
 
-A two-round topic-voting app. Admin imports topic suggestions from a Google Sheet, users do a pick-3 round, then a 10-vote stackable round, then admin publishes **results**: the **top** topics by vote total plus a **runners-up** list. How many topics appear in each section is **configurable** — see **Results display** under *Ballot invariants*. Zero-vote topics are hidden from both lists. Google SSO, one vote per account. Voters can also contribute one of their own topic ideas from the Round 1 ballot itself; it counts as one of their three picks and joins the topic pool for everyone.
+A topic-voting app with user recommendations. Voters submit topic recommendations during the **Submissions** phase (up to an admin-configurable cap per user). The admin moderates and bulk-promotes these suggestions to the active topic pool, then opens the **Round 1** pick-3 round, followed by a **Round 2** 10-vote stackable round, and finally publishes **results** (top topics by vote total + runners-up). The podium size is configurable. Zero-vote topics are hidden from both results lists. Google SSO, one vote per account. Voters can also contribute one of their own topic ideas on-the-fly from the Round 1 ballot itself; it counts as one of their three picks and joins the topic pool.
 
 ## Stack pins and gotchas
 
@@ -25,8 +25,9 @@ A two-round topic-voting app. Admin imports topic suggestions from a Google Shee
 ```
 src/
   app/
-    actions/       # "use server" server actions (auth.ts, admin.ts, vote.ts)
+    actions/       # "use server" server actions (auth.ts, admin.ts, vote.ts, submit.ts)
     admin/         # admin dashboard (page.tsx + AdminImport, LiveResults, VoterRollup)
+    submit/        # user recommendations submission page (page.tsx + SubmitTopicsClient)
     vote/round1/   # pick-3 ballot (page.tsx + Round1Ballot client)
     vote/round2/   # 10-vote stackable ballot (page.tsx + Round2Ballot client)
     results/       # top finishers + runners up (split + counts configurable; phase = results)
@@ -51,6 +52,7 @@ supabase/
     0001_init.sql                 # canonical schema. Keep this in lockstep with the DB.
     0002_user_round1_topics.sql   # topics.submitted_by + submit_round1_ballot/get_my_round1_topic RPCs
     0003_round2_blind_voting.sql  # get_round2_ballot returns topic IDs/text only, no submitter
+    0011_submissions.sql          # adds submissions table, submitting phase, and promote_submissions RPC
 ```
 
 ## Supabase MCP
@@ -111,7 +113,7 @@ If you forget step 3, `supabase db pull` will produce confusing diffs — schema
 
 ## Phase state machine
 
-Phases: `setup → round1 → round2 → results → archived` (plus one-step "reopen" transitions that go backwards, including `results → round2`). Only place that defines legal transitions: `LEGAL_TRANSITIONS` in [`src/app/actions/admin.ts`](src/app/actions/admin.ts). The admin UI's button list (`NEXT_ACTIONS` in [`src/app/admin/page.tsx`](src/app/admin/page.tsx)) must stay consistent with it; the **primary** (forward) action is rendered in purple and placed to the right of any "back" actions.
+Phases: `setup → submitting → round1 → round2 → results → archived` (plus one-step "reopen" transitions that go backwards, including `results → round2`). Only place that defines legal transitions: `LEGAL_TRANSITIONS` in [`src/app/actions/admin.ts`](src/app/actions/admin.ts). The admin UI's button list (`NEXT_ACTIONS` in [`src/app/admin/page.tsx`](src/app/admin/page.tsx)) must stay consistent with it; the **primary** (forward) action is rendered in purple and placed to the right of any "back" actions.
 
 If you add a phase, update **all** of:
 
@@ -119,7 +121,7 @@ If you add a phase, update **all** of:
 2. `Phase` type + `PHASE_LABEL` in [`src/lib/session.ts`](src/lib/session.ts).
 3. `LEGAL_TRANSITIONS` and `NEXT_ACTIONS`.
 4. Copy in `PHASE_COPY` (admin) and `COPY` (landing page) — including a loggedIn/loggedOut pair.
-5. Trigger/policy phase guards that reference `= 'round1'` / `= 'round2'`.
+5. Trigger/policy phase guards that reference `= 'submitting'`, `= 'round1'`, or `= 'round2'`.
 
 ## Ballot invariants
 
@@ -139,6 +141,14 @@ The "Suggest your own topic" textarea at the bottom of the Round 1 ballot create
 - **Clearing the textarea is non-destructive when others depend on it.** If the voter empties their textarea on a re-submit, the RPC drops the topic only when no other voter has voted for it. If others have, the topic stays alive and only the suggester's own R1 vote for it is removed (along with the rest of their wipe-and-reinsert). This avoids invalidating other voters' picks mid-round.
 - **`submitter` snapshot.** When a voter contributes a topic, the RPC fills `topics.submitter` with their display name (auth meta `full_name` → `name` → email local-part). That snapshot is hidden during Round 1/Round 2 voting and is what shows up in Results / admin tallies, indistinguishable from a sheet-imported row.
 - **Why the textarea path bypasses RLS.** The RPC is SECURITY DEFINER because (a) `topics` has no INSERT policy for `authenticated` (rule #5), (b) it needs to read `auth.users` for the display name, and (c) the topic insert + vote inserts must be in the same transaction so a failure on either side rolls back cleanly. If you ever consider replacing the RPC with two-step app code, you'd reintroduce a half-saved state on failure.
+
+### User suggestions (Submitting Phase)
+
+During the `submitting` phase, users can submit recommendations on `/submit`.
+- **Submission Cap**: Configured via `sessions.submission_cap`. Checked application-side in the `submitTopic` action before inserting into the `submissions` table.
+- **Deduplication**: Suggestions with identical normalized text (via `normalizeTopic`) are rejected at the database level using a unique index on `(session_id, normalized_text)`.
+- **Bulk Promotion (`promote_submissions` RPC)**: The admin can bulk-import these staging submissions. The RPC reads `submissions` and inserts them into `topics`.
+- **Constraint Safety**: To prevent violating `topics_one_user_submission_idx` (which caps user-contributed live topics at 1 per user/session during R1 voting), the `promote_submissions` RPC inserts the suggestions with `submitted_by` set as `null::uuid`. The submitter display name snapshot is saved to `topics.submitter`. This behaves exactly like legacy Google Sheet imports, leaving the user's R1 write-in suggestion slot completely open.
 
 If you build a feature that needs to mutate `topics` on behalf of an end user, **extend `submit_round1_ballot` (or write a new SECURITY DEFINER RPC in the same shape)**; do not add a permissive INSERT policy.
 
