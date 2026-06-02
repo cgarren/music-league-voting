@@ -11,7 +11,7 @@ const submitTopicSchema = z.object({
     .string()
     .trim()
     .min(1, "Topic is required.")
-    .max(500, "Topic cannot exceed 500 characters."),
+    .max(100, "Topic cannot exceed 100 characters."),
 });
 
 export async function submitTopic(formData: FormData): Promise<void> {

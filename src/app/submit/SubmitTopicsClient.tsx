@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useTransition, useOptimistic, useRef } from "react";
+import { useState, useTransition, useOptimistic, useRef, useMemo } from "react";
 import { submitTopic } from "@/app/actions/submit";
 import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import { pluralize } from "@/lib/pluralize";
+import { findSimilarItems } from "@/lib/similarity";
+import { normalizeTopic } from "@/lib/normalize";
 
 type Submission = {
   id: string;
@@ -12,7 +14,7 @@ type Submission = {
   created_at: string;
 };
 
-const MAX_TOPIC_LEN = 500;
+const MAX_TOPIC_LEN = 100;
 
 export function SubmitTopicsClient({
   submissionCap,
@@ -33,6 +35,18 @@ export function SubmitTopicsClient({
     initialSubmissions,
     (state, newSubmission: Submission) => [newSubmission, ...state]
   );
+
+  const similarSuggestions = useMemo(() => {
+    if (pending) return [];
+    const normQuery = normalizeTopic(topicText);
+    if (!normQuery) return [];
+    return findSimilarItems(
+      topicText,
+      optimisticSubmissions,
+      (s) => s.topic_text,
+      0.55
+    );
+  }, [topicText, optimisticSubmissions, pending]);
 
   const userSubmissions = optimisticSubmissions.filter(
     (s) => s.user_id === currentUserId
@@ -115,11 +129,12 @@ export function SubmitTopicsClient({
         </div>
       )}
 
-      {/* Quick Add Form */}
+      {/* Quick Add Form — sticky so it stays visible while scrolling through the list */}
+      <div className="sticky top-0 z-10 -mx-6 px-6 pt-4 pb-4 bg-[color:var(--color-background)]/90 backdrop-blur border-b border-[color:var(--color-border)] mb-8">
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className="mb-8 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-sm"
+        className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-sm"
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -154,6 +169,34 @@ export function SubmitTopicsClient({
             </div>
           </div>
 
+          {similarSuggestions.length > 0 && (
+            <div className="rounded-xl border border-[color:var(--color-accent)]/20 bg-[color:var(--color-accent)]/[0.02] p-4 text-xs animate-slide-up flex flex-col gap-2">
+              <span className="font-semibold text-[color:var(--color-accent)] flex items-center gap-1.5">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                {similarSuggestions.length === 1 ? "A similar suggestion already exists:" : "Similar suggestions already exist:"}
+              </span>
+              <ul className="space-y-1.5 pl-5 list-disc text-[color:var(--color-muted)]">
+                {similarSuggestions.slice(0, 3).map((match) => (
+                  <li key={match.item.id}>
+                    <span className="font-medium text-[color:var(--color-foreground)]">
+                      {formatTopicDisplay(match.item.topic_text)}
+                    </span>
+                    {match.score > 0.85 && (
+                      <span className="ml-2 rounded-full bg-[color:var(--color-danger)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--color-danger)] tracking-wide">
+                        High match
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[10px] text-[color:var(--color-muted)]/75">
+                {"If one of these matches your idea, you don't need to submit a duplicate. You'll be able to vote for it during the voting rounds!"}
+              </p>
+            </div>
+          )}
+
           {error && (
             <p className="rounded-lg border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger)]/10 px-3 py-2 text-xs text-[color:var(--color-danger)]">
               {error}
@@ -169,6 +212,7 @@ export function SubmitTopicsClient({
           </button>
         </div>
       </form>
+      </div>
 
       {/* Submissions List */}
       <section>
@@ -183,16 +227,13 @@ export function SubmitTopicsClient({
             </p>
           </div>
         ) : (
-          <ul className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+          <ul className="space-y-2">
             {optimisticSubmissions.map((sub) => {
               const isOwn = sub.user_id === currentUserId;
               return (
                 <li
                   key={sub.id}
-                  className={`rounded-xl border px-4 py-3.5 flex items-center justify-between transition-all ${isOwn
-                      ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/[0.03]"
-                      : "border-[color:var(--color-border)] bg-[color:var(--color-surface)]"
-                    }`}
+                  className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3.5 flex items-center justify-between transition-all"
                 >
                   <div className="min-w-0 flex-1 wrap-anywhere pr-3">
                     <p className="text-sm font-medium text-pretty">
