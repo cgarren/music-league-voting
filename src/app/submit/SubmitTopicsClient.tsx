@@ -134,6 +134,7 @@ export function SubmitTopicsClient({
                 id="topic-input"
                 type="text"
                 name="topic"
+                autoComplete="off"
                 value={topicText}
                 onChange={(e) => {
                   setError(null);

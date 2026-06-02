@@ -14,7 +14,7 @@ import { normalizeTopic } from "@/lib/normalize";
 const LEGAL_TRANSITIONS: Record<Phase, Phase[]> = {
   setup: ["submitting", "round1", "archived"],
   submitting: ["round1", "setup", "archived"],
-  round1: ["round2", "setup", "submitting", "archived"],
+  round1: ["round2", "submitting", "archived"],
   round2: ["results", "round1", "archived"],
   results: ["round2", "archived"],
   archived: [],
@@ -726,13 +726,6 @@ export async function promoteSubmissions(_formData: FormData): Promise<void> {
   const { error: rpcErr } = await db
     .rpc("promote_submissions", { p_session_id: session.id });
   if (rpcErr) throw new Error(rpcErr.message);
-
-  // Transition the session phase from submitting to round1
-  const { error: transitionErr } = await db
-    .from("sessions")
-    .update({ phase: "round1" })
-    .eq("id", session.id);
-  if (transitionErr) throw new Error(transitionErr.message);
 
   revalidatePath("/admin");
   revalidatePath("/submit");

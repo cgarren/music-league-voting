@@ -71,7 +71,7 @@ begin
       split_part(au.email, '@', 1),
       ''
     ) as submitter_name,
-    s.user_id
+    null::uuid
   from public.submissions s
   left join auth.users au on au.id = s.user_id
   where s.session_id = p_session_id

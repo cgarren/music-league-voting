@@ -8,7 +8,6 @@ import { pluralize } from "@/lib/pluralize";
 import { RESULTS_RUNNERS_UP_COUNT } from "@/lib/resultsDisplayConfig";
 import {
   createSession,
-  transitionPhase,
   updateResultsPodiumCount,
   updateSheetUrl,
   updateSubmissionCap,
@@ -21,6 +20,7 @@ import { DeadlineEditor } from "./DeadlineEditor";
 import { LiveResults, type LiveResultsRow } from "./LiveResults";
 import { TopicEditor } from "./TopicEditor";
 import { VoterRollup, type VoterRow } from "./VoterRollup";
+import { PhaseTransitionButtons } from "./PhaseTransitionButtons";
 
 // Admin-side shape of a topic row from the `topics` table. AdminImport owns
 // the Setup-phase editing UI, so outside of Setup the admin surface just uses
@@ -28,6 +28,7 @@ import { VoterRollup, type VoterRow } from "./VoterRollup";
 type AdminTopic = {
   id: string;
   topic_text: string;
+  normalized_text: string;
   submitter: string;
   removed: boolean;
 };
@@ -44,15 +45,13 @@ const PHASE_COPY: Record<Phase, string> = {
 // Order: secondary / “back” actions first, primary advance last (right side).
 const NEXT_ACTIONS: Record<Phase, { to: Phase; label: string }[]> = {
   setup: [
-    { to: "submitting", label: "Open Submissions Phase" },
-    { to: "round1", label: "Skip to Round 1" },
+    { to: "submitting", label: "Open Submissions" },
   ],
   submitting: [
     { to: "setup", label: "Back to Setup" },
     { to: "round1", label: "Close submissions → Start Round 1" },
   ],
   round1: [
-    { to: "setup", label: "Reopen Setup" },
     { to: "submitting", label: "Reopen Submissions" },
     { to: "round2", label: "Close Round 1 → Open Round 2" },
   ],
@@ -104,7 +103,7 @@ export default async function AdminPage() {
     ? (
       await db
         .from("topics")
-        .select("id, topic_text, submitter, removed, created_at")
+        .select("id, topic_text, normalized_text, submitter, removed, created_at")
         .eq("session_id", session.id)
         .order("created_at", { ascending: true })
     ).data ?? []
@@ -128,11 +127,17 @@ export default async function AdminPage() {
     ? (
       await db
         .from("submissions")
-        .select("id, topic_text, user_id, created_at")
+        .select("id, topic_text, normalized_text, user_id, created_at")
         .eq("session_id", session.id)
         .order("created_at", { ascending: false })
     ).data ?? []
     : [];
+
+  const unimportedCount = session && session.phase === "submitting"
+    ? submissions.filter(
+      (s) => !visibleTopics.some((t) => t.normalized_text === s.normalized_text)
+    ).length
+    : 0;
 
   const { data: listing } = session
     ? await db.auth.admin.listUsers({ page: 1, perPage: 200 })
@@ -231,15 +236,7 @@ export default async function AdminPage() {
                 className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
               />
             </label>
-            <label className="text-sm font-medium">
-              Google Sheet URL (optional)
-              <input
-                name="sheet_url"
-                type="url"
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className="mt-1 w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
-              />
-            </label>
+
             <label className="text-sm font-medium">
               Leading topics on results page
               <input
@@ -276,26 +273,10 @@ export default async function AdminPage() {
                   </span>
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {NEXT_ACTIONS[session.phase].map((action, i, arr) => {
-                  const isPrimary = i === arr.length - 1;
-                  return (
-                    <form key={action.to} action={transitionPhase}>
-                      <input type="hidden" name="to" value={action.to} />
-                      <button
-                        type="submit"
-                        className={
-                          isPrimary
-                            ? "rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)]"
-                            : "rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm font-medium hover:border-[color:var(--color-accent)]"
-                        }
-                      >
-                        {action.label}
-                      </button>
-                    </form>
-                  );
-                })}
-              </div>
+              <PhaseTransitionButtons
+                actions={NEXT_ACTIONS[session.phase]}
+                topicsCount={visibleTopics.length}
+              />
             </div>
 
             {stats ? (
@@ -323,207 +304,258 @@ export default async function AdminPage() {
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold">Round deadlines</h3>
-              <p className="text-xs text-[color:var(--color-muted)]">
-                Optional. Shown to voters as a target — voting still closes
-                only when you advance the phase.
-              </p>
-            </div>
-            <DeadlineEditor
-              round1DeadlineAt={session.round1_deadline_at}
-              round2DeadlineAt={session.round2_deadline_at}
-              deadlineTimezone={session.deadline_timezone}
-            />
-          </section>
-
-          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold">Results page layout</h3>
-              <p className="text-xs text-[color:var(--color-muted)]">
-                Shown when you publish results. Runners up: next {RESULTS_RUNNERS_UP_COUNT}{" "}
-                topics after this many leading entries.
-              </p>
-            </div>
-            <form
-              action={updateResultsPodiumCount}
-              className="mt-4 flex flex-wrap items-end gap-3"
-            >
-              <label className="text-sm font-medium">
-                Leading topics (1–50)
-                <input
-                  name="results_podium_count"
-                  type="number"
-                  min={1}
-                  max={50}
-                  defaultValue={session.results_podium_count}
-                  required
-                  className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
-                />
-              </label>
-              <button
-                type="submit"
-                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
-              >
-                Save
-              </button>
-            </form>
-          </section>
-
-          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold">User Submission Cap</h3>
-              <p className="text-xs text-[color:var(--color-muted)]">
-                Limits the number of suggestions a user can submit. Leave blank or set to 0 for unlimited.
-              </p>
-            </div>
-            <form
-              action={updateSubmissionCap}
-              className="mt-4 flex flex-wrap items-end gap-3"
-            >
-              <label className="text-sm font-medium">
-                Max submissions per user
-                <input
-                  name="submission_cap"
-                  type="number"
-                  min={1}
-                  defaultValue={session.submission_cap ?? ""}
-                  placeholder="Unlimited"
-                  className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
-                />
-              </label>
-              <button
-                type="submit"
-                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
-              >
-                Save Cap
-              </button>
-            </form>
-          </section>
-
-          {session.phase === "setup" ? (
-            <>
-              <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-                <h3 className="text-base font-semibold">Google Sheet</h3>
-                <form
-                  action={updateSheetUrl}
-                  className="mt-3 flex flex-col gap-2 sm:flex-row"
-                >
-                  <input
-                    required
-                    name="sheet_url"
-                    type="url"
-                    defaultValue={session.sheet_url ?? ""}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
+          {/* Settings Section (collapsible details element) */}
+          <details
+            open={session.phase === "setup"}
+            className="group border border-[color:var(--color-border)] rounded-2xl bg-[color:var(--color-surface)] overflow-hidden transition-all duration-200"
+          >
+            <summary className="flex items-center justify-between p-6 font-medium cursor-pointer select-none hover:bg-[color:var(--color-surface-elevated)]/40 transition-colors">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-[color:var(--color-accent)]" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+                <span className="text-base font-semibold text-white">Session Settings</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[color:var(--color-muted)] group-open:hidden">Click to expand</span>
+                <span className="text-xs text-[color:var(--color-muted)] hidden group-open:inline">Click to collapse</span>
+                <span className="text-[color:var(--color-muted)] transition-transform duration-200 group-open:rotate-180">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </span>
+              </div>
+            </summary>
+            <div className="p-6 border-t border-[color:var(--color-border)] flex flex-col gap-6 bg-[color:var(--color-surface-elevated)]/20">
+              {/* Round deadlines */}
+              <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-white">Round deadlines</h4>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    Optional. Shown to voters as a target — voting still closes only when you advance the phase.
+                  </p>
+                </div>
+                <div className="mt-4">
+                  <DeadlineEditor
+                    round1DeadlineAt={session.round1_deadline_at}
+                    round2DeadlineAt={session.round2_deadline_at}
+                    deadlineTimezone={session.deadline_timezone}
                   />
+                </div>
+              </section>
+
+              {/* Results page layout */}
+              <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-white">Results page layout</h4>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    Shown when you publish results (usually correlates to number of rounds). The next {RESULTS_RUNNERS_UP_COUNT} topics after the leading topics are shown as runners up.
+                  </p>
+                </div>
+                <form
+                  action={updateResultsPodiumCount}
+                  className="mt-4 flex flex-wrap items-end gap-3"
+                >
+                  <label className="text-sm font-medium">
+                    Leading topics (1–50)
+                    <input
+                      name="results_podium_count"
+                      type="number"
+                      min={1}
+                      max={50}
+                      defaultValue={session.results_podium_count}
+                      required
+                      className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                    />
+                  </label>
                   <button
                     type="submit"
-                    className="rounded-lg border border-[color:var(--color-border)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
                   >
-                    Save URL
+                    Save
                   </button>
                 </form>
-                <p className="mt-2 text-xs text-[color:var(--color-muted)]">
-                  Sheet must be shared as &quot;Anyone with the link (Viewer)&quot;.
-                  We only fetch from docs.google.com.
-                </p>
               </section>
 
-              <AdminImport
-                sessionId={session.id}
-                sheetUrl={session.sheet_url}
-                existingTopics={visibleTopics.map((t) => ({
-                  id: t.id,
-                  topic_text: t.topic_text,
-                  submitter: t.submitter,
-                }))}
-              />
-            </>
-          ) : session.phase === "submitting" ? (
-            <>
-              <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)] pb-4 mb-4">
-                  <div>
-                    <h3 className="text-base font-semibold">Topic Submissions Moderation</h3>
+              {/* User submission cap */}
+              {(session.phase === "setup" || session.phase === "submitting") && (
+                <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-white">User Submission Cap</h4>
                     <p className="text-xs text-[color:var(--color-muted)]">
-                      Review and delete suggestions before importing. Click &quot;Import &amp; Start Round 1&quot; when ready.
+                      Limits the number of suggestions a user can submit. Leave blank for unlimited.
                     </p>
                   </div>
-                  <form action={promoteSubmissions}>
+                  <form
+                    action={updateSubmissionCap}
+                    className="mt-4 flex flex-wrap items-end gap-3"
+                  >
+                    <label className="text-sm font-medium">
+                      Max submissions per user
+                      <input
+                        name="submission_cap"
+                        type="number"
+                        min={1}
+                        defaultValue={session.submission_cap ?? ""}
+                        placeholder="Unlimited"
+                        className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                      />
+                    </label>
                     <button
                       type="submit"
-                      disabled={submissions.length === 0}
-                      className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
                     >
-                      Import Submissions &amp; Start Round 1
+                      Save Cap
                     </button>
                   </form>
-                </div>
-
-                <div className="text-sm text-[color:var(--color-muted)] mb-4">
-                  {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
-                </div>
-
-                {submissions.length === 0 ? (
-                  <p className="text-sm text-[color:var(--color-muted)] italic">
-                    Waiting for users to submit topics...
-                  </p>
-                ) : (
-                  <div className="max-h-[400px] overflow-y-auto pr-1">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
-                          <th className="py-2">Topic Text</th>
-                          <th className="py-2">Submitter</th>
-                          <th className="py-2 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
-                        {submissions.map((sub) => {
-                          const user = byId.get(sub.user_id);
-                          const name = resolveName(user);
-                          return (
-                            <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
-                              <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
-                              <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
-                              <td className="py-3 text-right">
-                                <form action={deleteSubmission} className="inline">
-                                  <input type="hidden" name="id" value={sub.id} />
-                                  <button
-                                    type="submit"
-                                    className="text-xs text-[color:var(--color-danger)] hover:underline"
-                                  >
-                                    Delete
-                                  </button>
-                                </form>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            </>
-          ) : (
-            <>
-              {["round2", "results"].includes(session.phase) ? (
-                <>
-                  {r2ResultsEl}
-                  {r1ResultsEl}
-                </>
-              ) : (
-                <>
-                  {r1ResultsEl}
-                  {r2ResultsEl}
-                </>
+                </section>
               )}
 
-              {showVotingData ? <VoterRollup voters={voters} /> : null}
-            </>
+              {/* Google Sheets configuration (legacy) */}
+              {session.phase === "setup" && (
+                <>
+                  <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-white">Google Sheet</h4>
+                      <span className="rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--color-muted)]">
+                        Legacy
+                      </span>
+                    </div>
+                    <form
+                      action={updateSheetUrl}
+                      className="mt-3 flex flex-col gap-2 sm:flex-row"
+                    >
+                      <input
+                        required
+                        name="sheet_url"
+                        type="url"
+                        defaultValue={session.sheet_url ?? ""}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        className="flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-[color:var(--color-border)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+                      >
+                        Save URL
+                      </button>
+                    </form>
+                    <p className="mt-2 text-xs text-[color:var(--color-muted)]">
+                      Sheet must be shared as &quot;Anyone with the link (Viewer)&quot;.
+                      We only fetch from docs.google.com.
+                    </p>
+                  </section>
+
+                  <AdminImport
+                    sessionId={session.id}
+                    sheetUrl={session.sheet_url}
+                    existingTopics={visibleTopics.map((t) => ({
+                      id: t.id,
+                      topic_text: t.topic_text,
+                      submitter: t.submitter,
+                    }))}
+                  />
+                </>
+              )}
+            </div>
+          </details>
+
+          {/* Results & Submissions Section */}
+          {session.phase !== "setup" && (
+            <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 flex flex-col gap-6">
+              <div className="border-b border-[color:var(--color-border)] pb-3">
+                <h2 className="text-lg font-semibold text-white">Round Results & Submissions</h2>
+                <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
+                  Live submissions, votes, and participant rollup.
+                </p>
+              </div>
+
+              {session.phase === "submitting" ? (
+                /* Topic Submissions Moderation Panel */
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)]/60 pb-4 mb-2">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">Topic Submissions Moderation</h3>
+                      <p className="text-xs text-[color:var(--color-muted)] mt-0.5">
+                        Review and delete suggestions. Click &quot;Import all submissions&quot; to copy them into the active topic list.
+                      </p>
+                    </div>
+                    <form action={promoteSubmissions}>
+                      <button
+                        type="submit"
+                        disabled={unimportedCount === 0}
+                        className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                      >
+                        Import all submissions
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="text-sm text-[color:var(--color-muted)]">
+                    {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
+                  </div>
+
+                  {submissions.length === 0 ? (
+                    <p className="text-sm text-[color:var(--color-muted)] italic py-4">
+                      Waiting for users to submit topics...
+                    </p>
+                  ) : (
+                    <div className="max-h-[400px] overflow-y-auto pr-1">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
+                            <th className="py-2">Topic Text</th>
+                            <th className="py-2">Submitter</th>
+                            <th className="py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
+                          {submissions.map((sub) => {
+                            const user = byId.get(sub.user_id);
+                            const name = resolveName(user);
+                            return (
+                              <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
+                                <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
+                                <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
+                                <td className="py-3 text-right">
+                                  <form action={deleteSubmission} className="inline">
+                                    <input type="hidden" name="id" value={sub.id} />
+                                    <button
+                                      type="submit"
+                                      className="text-xs text-[color:var(--color-danger)] hover:underline"
+                                    >
+                                      Delete
+                                    </button>
+                                  </form>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Round Results and Voter Rollup */
+                <div className="flex flex-col gap-6">
+                  {["round2", "results"].includes(session.phase) ? (
+                    <>
+                      {r2ResultsEl}
+                      {r1ResultsEl}
+                    </>
+                  ) : (
+                    <>
+                      {r1ResultsEl}
+                      {r2ResultsEl}
+                    </>
+                  )}
+
+                  {showVotingData ? <VoterRollup voters={voters} /> : null}
+                </div>
+              )}
+            </section>
           )}
 
           {showTopicEditor ? (
