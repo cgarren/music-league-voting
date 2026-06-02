@@ -50,6 +50,21 @@ body {
   summary {
     cursor: pointer;
   }
+
+  /* Prevent iOS auto-zoom on input focus by ensuring font-size is at least 16px on mobile */
+  @media (max-width: 767px) {
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    input[type="search"],
+    input[type="tel"],
+    input[type="url"],
+    input[type="password"],
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /* Subtle aurora backdrop */

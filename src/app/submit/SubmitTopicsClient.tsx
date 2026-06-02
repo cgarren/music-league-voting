@@ -150,6 +150,7 @@ export function SubmitTopicsClient({
                 type="text"
                 name="topic"
                 autoComplete="off"
+                autoFocus={!isCapReached}
                 value={topicText}
                 onChange={(e) => {
                   setError(null);

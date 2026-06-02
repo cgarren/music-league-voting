@@ -30,14 +30,14 @@ const COPY: Record<Phase, PhaseCopy> = {
     submitting: {
         badge: "Submissions open",
         loggedIn: {
-            headline: "Suggest a topic",
-            sub: "Submit the topics you want to vote on this season.",
+            headline: "Suggest topics",
+            sub: "Submit topics you want to see in the upcoming season.",
         },
         loggedOut: {
             headline: "Submissions are open",
-            sub: "Sign in with Google to suggest your topics.",
+            sub: "Sign in with Google to suggest topics.",
         },
-        cta: { href: "/submit", label: "Suggest topics" },
+        cta: { href: "/submit", label: "Submit topics" },
     },
     round1: {
         badge: "Round 1 open",
