@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -8,10 +9,12 @@ import { fetchAndParseSheet, sheetUrlSchema } from "@/lib/sheet";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseDeadlineForStorage } from "@/lib/parseDeadlineForStorage";
 import type { Phase } from "@/lib/session";
+import { normalizeTopic } from "@/lib/normalize";
 
 const LEGAL_TRANSITIONS: Record<Phase, Phase[]> = {
-  setup: ["round1", "archived"],
-  round1: ["round2", "setup", "archived"],
+  setup: ["submitting", "round1", "archived"],
+  submitting: ["round1", "setup", "archived"],
+  round1: ["round2", "setup", "submitting", "archived"],
   round2: ["results", "round1", "archived"],
   results: ["round2", "archived"],
   archived: [],
@@ -198,7 +201,7 @@ export async function updateRoundDeadlines(formData: FormData): Promise<void> {
 export async function transitionPhase(formData: FormData): Promise<void> {
   await guard("transition_phase");
   const to = z
-    .enum(["setup", "round1", "round2", "results", "archived"])
+    .enum(["setup", "submitting", "round1", "round2", "results", "archived"])
     .parse(formData.get("to"));
 
   const db = createAdminClient();
@@ -409,13 +412,6 @@ const addManualTopicSchema = z.object({
   submitter: z.string().trim().max(200).default(""),
 });
 
-function normalizeTopic(topic: string): string {
-  return topic
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[^\p{L}\p{N} ]+/gu, "")
-    .trim();
-}
 
 type AdminDb = ReturnType<typeof createAdminClient>;
 
@@ -429,9 +425,9 @@ async function getEditableTopicSession(db: AdminDb): Promise<{
     .is("archived_at", null)
     .maybeSingle();
   if (!session) throw new Error("No active session.");
-  if (!["setup", "round1", "round2"].includes(session.phase)) {
+  if (!["setup", "submitting", "round1", "round2"].includes(session.phase)) {
     throw new Error(
-      "Topic editing is only available during setup, round 1, or round 2.",
+      "Topic editing is only available during setup, submissions, round 1, or round 2.",
     );
   }
   return { id: session.id, phase: session.phase as Phase };
@@ -629,9 +625,9 @@ export async function addManualTopic(payload: {
     .eq("id", parsed.session_id)
     .maybeSingle();
   if (!session) throw new Error("Session not found.");
-  if (!["setup", "round1", "round2"].includes(session.phase)) {
+  if (!["setup", "submitting", "round1", "round2"].includes(session.phase)) {
     throw new Error(
-      "Topics can only be added while phase = setup, round1, or round2.",
+      "Topics can only be added while phase = setup, submitting, round1, or round2.",
     );
   }
 
@@ -661,4 +657,85 @@ export async function addManualTopic(payload: {
 
   revalidatePath("/admin");
   return { ok: true };
+}
+
+// -----------------------------------------------------------------------------
+// Submissions administration
+// -----------------------------------------------------------------------------
+
+const updateSubmissionCapSchema = z.object({
+  submission_cap: z.preprocess(
+    (v) => (v === "" || v == null ? null : v),
+    z.coerce.number().int().min(1, "Cap must be at least 1.").nullable()
+  ),
+});
+
+export async function updateSubmissionCap(formData: FormData): Promise<void> {
+  await guard("update_submission_cap");
+  const parsed = updateSubmissionCapSchema.parse({
+    submission_cap: formData.get("submission_cap"),
+  });
+
+  const db = createAdminClient();
+  const { data: session } = await db
+    .from("sessions")
+    .select("id")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (!session) throw new Error("No active session.");
+
+  const { error } = await db
+    .from("sessions")
+    .update({ submission_cap: parsed.submission_cap })
+    .eq("id", session.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/submit");
+}
+
+export async function deleteSubmission(formData: FormData): Promise<void> {
+  await guard("delete_submission");
+  const id = z.string().uuid().parse(formData.get("id"));
+  const db = createAdminClient();
+  const { error } = await db
+    .from("submissions")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/submit");
+}
+
+export async function promoteSubmissions(_formData: FormData): Promise<void> {
+  void _formData;
+  await guard("promote_submissions");
+  const db = createAdminClient();
+  const { data: session } = await db
+    .from("sessions")
+    .select("id, phase")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (!session) throw new Error("No active session.");
+  if (session.phase !== "submitting") {
+    throw new Error("Session is not in submitting phase.");
+  }
+
+  // Call the DB RPC function to promote submissions to topics
+  const { error: rpcErr } = await db
+    .rpc("promote_submissions", { p_session_id: session.id });
+  if (rpcErr) throw new Error(rpcErr.message);
+
+  // Transition the session phase from submitting to round1
+  const { error: transitionErr } = await db
+    .from("sessions")
+    .update({ phase: "round1" })
+    .eq("id", session.id);
+  if (transitionErr) throw new Error(transitionErr.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/submit");
+  revalidatePath("/vote/round1");
+  revalidatePath("/");
 }

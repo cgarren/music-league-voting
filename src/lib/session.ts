@@ -1,10 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 
-export type Phase = "setup" | "round1" | "round2" | "results" | "archived";
+export type Phase = "setup" | "submitting" | "round1" | "round2" | "results" | "archived";
 
 /** Human-readable session phase (UI copy, not the DB enum string). */
 export const PHASE_LABEL: Record<Phase, string> = {
   setup: "Setup",
+  submitting: "Submissions",
   round1: "Round 1",
   round2: "Round 2",
   results: "Results",
@@ -27,6 +28,7 @@ export type ActiveSession = {
   deadline_timezone: string | null;
   /** Leading topics on `/results` before the runners-up block (1–50; see admin). */
   results_podium_count: number;
+  submission_cap: number | null;
 };
 
 export type PublicSession = Omit<
@@ -36,6 +38,7 @@ export type PublicSession = Omit<
   | "round2_deadline_at"
   | "deadline_timezone"
   | "results_podium_count"
+  | "submission_cap"
 >;
 
 /**
@@ -49,7 +52,7 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
   const { data } = await supabase
     .from("sessions")
     .select(
-      "id, name, sheet_url, phase, created_at, round1_deadline_at, round2_deadline_at, deadline_timezone, results_podium_count",
+      "id, name, sheet_url, phase, created_at, round1_deadline_at, round2_deadline_at, deadline_timezone, results_podium_count, submission_cap",
     )
     .is("archived_at", null)
     .maybeSingle();

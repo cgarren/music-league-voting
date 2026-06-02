@@ -27,6 +27,18 @@ const COPY: Record<Phase, PhaseCopy> = {
             sub: "Topics are being imported. Sign in with Google so you’re ready the moment Round 1 opens.",
         },
     },
+    submitting: {
+        badge: "Submissions open",
+        loggedIn: {
+            headline: "Suggest a topic",
+            sub: "Submit the topics you want to vote on this season.",
+        },
+        loggedOut: {
+            headline: "Submissions are open",
+            sub: "Sign in with Google to suggest your topics.",
+        },
+        cta: { href: "/submit", label: "Suggest topics" },
+    },
     round1: {
         badge: "Round 1 open",
         loggedIn: {

@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import type { User } from "@supabase/supabase-js";
 import { getAdminUser, isAdminConfigured } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getActiveSession, type Phase } from "@/lib/session";
@@ -9,7 +11,11 @@ import {
   transitionPhase,
   updateResultsPodiumCount,
   updateSheetUrl,
+  updateSubmissionCap,
+  deleteSubmission,
+  promoteSubmissions,
 } from "@/app/actions/admin";
+import { formatTopicDisplay } from "@/lib/formatTopicDisplay";
 import { AdminImport } from "./AdminImport";
 import { DeadlineEditor } from "./DeadlineEditor";
 import { LiveResults, type LiveResultsRow } from "./LiveResults";
@@ -28,6 +34,7 @@ type AdminTopic = {
 
 const PHASE_COPY: Record<Phase, string> = {
   setup: "Setup — import & clean topics",
+  submitting: "Submissions — gathering user suggestions",
   round1: "Round 1 — voters picking top 3",
   round2: "Round 2 — voters spending 10 votes",
   results: "Results — published to voters",
@@ -36,9 +43,17 @@ const PHASE_COPY: Record<Phase, string> = {
 
 // Order: secondary / “back” actions first, primary advance last (right side).
 const NEXT_ACTIONS: Record<Phase, { to: Phase; label: string }[]> = {
-  setup: [{ to: "round1", label: "Open Round 1" }],
+  setup: [
+    { to: "submitting", label: "Open Submissions Phase" },
+    { to: "round1", label: "Skip to Round 1" },
+  ],
+  submitting: [
+    { to: "setup", label: "Back to Setup" },
+    { to: "round1", label: "Start Round 1 (No Promotion)" },
+  ],
   round1: [
     { to: "setup", label: "Reopen Setup" },
+    { to: "submitting", label: "Reopen Submissions" },
     { to: "round2", label: "Close Round 1 → Open Round 2" },
   ],
   round2: [
@@ -108,18 +123,34 @@ export default async function AdminPage() {
       ).data as SessionStats | null) ?? null
     : null;
 
+  // Fetch submissions and user directory if applicable
+  const submissions = session && session.phase === "submitting"
+    ? (
+        await db
+          .from("submissions")
+          .select("id, topic_text, user_id, created_at")
+          .eq("session_id", session.id)
+          .order("created_at", { ascending: false })
+      ).data ?? []
+    : [];
+
+  const { data: listing } = session
+    ? await db.auth.admin.listUsers({ page: 1, perPage: 200 })
+    : { data: null };
+  const byId = new Map(listing?.users?.map((u) => [u.id, u]) ?? []);
+
   // Live tallies and voter rollup are only meaningful once voters are active.
   const showVotingData = session && VOTING_PHASES.includes(session.phase);
   const round1Rows: LiveResultsRow[] = showVotingData
     ? await fetchRound1Tallies(db, session.id, visibleTopics)
     : [];
   const showR2 = session && ["round2", "results"].includes(session.phase);
-  const showTopicEditor = session && ["setup", "round1", "round2"].includes(session.phase);
+  const showTopicEditor = session && ["setup", "submitting", "round1", "round2"].includes(session.phase);
   const round2Rows: LiveResultsRow[] = showR2
     ? await fetchRound2Tallies(db, session.id, visibleTopics)
     : [];
   const voters: VoterRow[] = showVotingData
-    ? await fetchVoterRollup(db, session.id)
+    ? await fetchVoterRollup(db, session.id, byId)
     : [];
   const r2VoteTotal = round2Rows.reduce((s, r) => s + r.value, 0);
 
@@ -334,6 +365,37 @@ export default async function AdminPage() {
             </form>
           </section>
 
+          <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-base font-semibold">User Submission Cap</h3>
+              <p className="text-xs text-[color:var(--color-muted)]">
+                Limits the number of suggestions a user can submit. Leave blank or set to 0 for unlimited.
+              </p>
+            </div>
+            <form
+              action={updateSubmissionCap}
+              className="mt-4 flex flex-wrap items-end gap-3"
+            >
+              <label className="text-sm font-medium">
+                Max submissions per user
+                <input
+                  name="submission_cap"
+                  type="number"
+                  min={1}
+                  defaultValue={session.submission_cap ?? ""}
+                  placeholder="Unlimited"
+                  className="mt-1 block w-32 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-3 py-2 text-sm tabular-nums focus:border-[color:var(--color-accent)] focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-4 py-2 text-sm hover:border-[color:var(--color-accent)]"
+              >
+                Save Cap
+              </button>
+            </form>
+          </section>
+
           {session.phase === "setup" ? (
             <>
               <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
@@ -372,6 +434,73 @@ export default async function AdminPage() {
                   submitter: t.submitter,
                 }))}
               />
+            </>
+          ) : session.phase === "submitting" ? (
+            <>
+              <section className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border)] pb-4 mb-4">
+                  <div>
+                    <h3 className="text-base font-semibold">Topic Submissions Moderation</h3>
+                    <p className="text-xs text-[color:var(--color-muted)]">
+                      Review and delete suggestions before importing. Click &quot;Import &amp; Start Round 1&quot; when ready.
+                    </p>
+                  </div>
+                  <form action={promoteSubmissions}>
+                    <button
+                      type="submit"
+                      disabled={submissions.length === 0}
+                      className="rounded-full bg-[color:var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Import Submissions &amp; Start Round 1
+                    </button>
+                  </form>
+                </div>
+
+                <div className="text-sm text-[color:var(--color-muted)] mb-4">
+                  {submissions.length} {pluralize(submissions.length, "submission", "submissions")} received.
+                </div>
+
+                {submissions.length === 0 ? (
+                  <p className="text-sm text-[color:var(--color-muted)] italic">
+                    Waiting for users to submit topics...
+                  </p>
+                ) : (
+                  <div className="max-h-[400px] overflow-y-auto pr-1">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-[color:var(--color-border)] text-xs font-semibold uppercase tracking-wider text-[color:var(--color-muted)]">
+                          <th className="py-2">Topic Text</th>
+                          <th className="py-2">Submitter</th>
+                          <th className="py-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[color:var(--color-border)] text-sm">
+                        {submissions.map((sub) => {
+                          const user = byId.get(sub.user_id);
+                          const name = resolveName(user);
+                          return (
+                            <tr key={sub.id} className="hover:bg-[color:var(--color-surface-elevated)]/40">
+                              <td className="py-3 pr-4 font-medium">{formatTopicDisplay(sub.topic_text)}</td>
+                              <td className="py-3 text-[color:var(--color-muted)]">{name} ({user?.email ?? "—"})</td>
+                              <td className="py-3 text-right">
+                                <form action={deleteSubmission} className="inline">
+                                  <input type="hidden" name="id" value={sub.id} />
+                                  <button
+                                    type="submit"
+                                    className="text-xs text-[color:var(--color-danger)] hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                </form>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             </>
           ) : (
             <>
@@ -500,6 +629,7 @@ async function fetchRound2Tallies(
 async function fetchVoterRollup(
   db: AdminDb,
   sessionId: string,
+  byId: Map<string, User>,
 ): Promise<VoterRow[]> {
   const [{ data: r1 }, { data: r2 }] = await Promise.all([
     db.from("round1_votes").select("user_id").eq("session_id", sessionId),
@@ -523,16 +653,6 @@ async function fetchVoterRollup(
 
   const voterIds = new Set<string>([...r1Picks.keys(), ...r2VotesByUser.keys()]);
   if (voterIds.size === 0) return [];
-
-  // auth.admin.listUsers pages through all users; for this app's scale (a few
-  // dozen voters at most) a single 200-user page is plenty. If usage grows
-  // we'd switch to paginating or a SECURITY DEFINER RPC that joins directly
-  // against auth.users.
-  const { data: listing } = await db.auth.admin.listUsers({
-    page: 1,
-    perPage: 200,
-  });
-  const byId = new Map(listing?.users?.map((u) => [u.id, u]) ?? []);
 
   const rows: VoterRow[] = [];
   for (const id of voterIds) {
