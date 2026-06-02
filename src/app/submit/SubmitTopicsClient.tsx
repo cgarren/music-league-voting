@@ -115,7 +115,7 @@ export function SubmitTopicsClient({
           Suggest Topics
         </h1>
         <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-          Submit topics you want to see on the voting ballot for {sessionName}. Keep in mind, topics can&apos;t be deleted.
+          Submit topics you want to see on the voting ballot for {sessionName}.
         </p>
       </header>
 
