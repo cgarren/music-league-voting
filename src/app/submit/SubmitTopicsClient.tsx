@@ -113,7 +113,7 @@ export function SubmitTopicsClient({
           Suggest Topics
         </h1>
         <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-          Submit the topics you want to see on the voting ballot this season. Anyone can see the list of suggested topics below.
+          Submit topics you want to see on the voting ballot. Topics can&apos;t be deleted, so be thoughtful about what you submit!
         </p>
       </header>
 
