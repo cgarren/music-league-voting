@@ -418,7 +418,7 @@ export default async function AdminPage() {
                   <section className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]/30 p-5">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-semibold text-white">Google Sheet</h4>
-                      <span className="rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--color-muted)]">
+                      <span className="rounded-full border border-[color:rgba(249,115,22,0.25)] bg-[color:rgba(249,115,22,0.12)] px-2 py-0.5 text-[10px] font-medium text-[color:rgb(251,146,60)]">
                         Legacy
                       </span>
                     </div>
